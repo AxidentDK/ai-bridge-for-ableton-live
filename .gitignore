@@ -24,3 +24,10 @@ Thumbs.db
 # Local logs / scratch
 *.log
 scratch/
+
+# Private agent-instruction files — kept LOCAL, never published.
+# These guide the AI assistant while developing; they are private workflow and
+# irrelevant to the program running. (README.md is public and stays tracked.)
+CLAUDE.md
+AGENTS.md
+.claude/
