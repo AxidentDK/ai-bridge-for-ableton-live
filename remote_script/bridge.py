@@ -16,6 +16,7 @@ import Live  # noqa: F401 — provided by Live's embedded interpreter
 from _Framework.ControlSurface import ControlSurface
 
 from . import dispatch
+from .observers import Registry
 from .server import SocketServer
 
 MAIN_THREAD_TIMEOUT = 15.0  # seconds to wait for Live's thread before giving up
@@ -29,6 +30,7 @@ class Bridge(ControlSurface):
     def __init__(self, c_instance):
         super().__init__(c_instance)
         self._main_thread_id = threading.current_thread().ident
+        self._registry = Registry(log=self.log_message)
         self._context = {
             "roots": {
                 "live_set": self.song(),
@@ -38,25 +40,45 @@ class Bridge(ControlSurface):
                 "live": _live_version(),
                 "python": "%d.%d.%d" % sys.version_info[:3],
             },
-            "capabilities": ["get", "set", "call", "resolve", "children"],
+            "capabilities": ["get", "set", "call", "resolve", "children",
+                             "observe", "unobserve"],
+            "registry": self._registry,
         }
-        self._server = SocketServer(self._handle_request, log=self.log_message)
+        self._server = SocketServer(
+            self._handle_request, log=self.log_message,
+            on_disconnect=self._on_client_disconnect,
+        )
         self._server.start()
         self.log_message("AI Bridge for Ableton Live: server started on 127.0.0.1:8766")
 
     def disconnect(self):
         try:
             self._server.stop()
+            # we ARE on Live's main thread here — tear every listener down
+            n = self._registry.teardown_all()
+            if n:
+                self.log_message(f"AI Bridge: tore down {n} listener(s) on shutdown")
         finally:
             super().disconnect()
 
+    def _on_client_disconnect(self, client):
+        """Socket thread: marshal the registry cleanup onto Live's main thread."""
+
+        def cleanup():
+            try:
+                self._registry.drop_client(client.id)
+            except Exception as exc:  # never raise inside Live's tick
+                self.log_message(f"AI Bridge: drop_client({client.id}) failed: {exc}")
+
+        self.schedule_message(0, cleanup)
+
     # --- request handling ------------------------------------------------------
 
-    def _handle_request(self, request: dict) -> dict:
+    def _handle_request(self, request: dict, client) -> dict:
         """Runs on a socket thread. Hop to Live's thread for all LOM access."""
         rid = request.get("id")
         try:
-            return self._run_on_main(lambda: dispatch.handle(self._context, request))
+            return self._run_on_main(lambda: dispatch.handle(self._context, request, client))
         except _MainThreadTimeout:
             return _internal(rid, "timed out waiting for Live's main thread")
         except Exception as exc:  # last-resort guard — always answer

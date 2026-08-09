@@ -7,7 +7,20 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest  # noqa: E402
+try:
+    import pytest  # noqa: E402
+except ImportError:  # standalone runner without pytest installed
+    import contextlib
+
+    class pytest:  # noqa: N801 — minimal shim: only raises() is used here
+        @staticmethod
+        @contextlib.contextmanager
+        def raises(exc_type):
+            try:
+                yield
+            except exc_type:
+                return
+            raise AssertionError(f"expected {exc_type.__name__} to be raised")
 
 from remote_script import framing  # noqa: E402
 

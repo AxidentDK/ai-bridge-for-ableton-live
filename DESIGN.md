@@ -3,7 +3,9 @@
 > Name: **AI Bridge for Ableton Live** (repo slug `ai-bridge-for-ableton-live`;
 > settled 2026-08-10 — availability verified on GitHub/PyPI/npm; the
 > "X for Ableton Live" form follows Ableton's tolerated compatibility naming).
-> The control-surface entry inside Live displays as "Live Bridge".
+> Short form: **AI Bridge** (used everywhere after first mention). The
+> control-surface entry inside Live displays as "AI Bridge" (install folder
+> `AI_Bridge`).
 > Status: **blueprint / pre-code.** This is a living document; each build phase
 > may feed changes back into it. License: **Apache-2.0**. Maintainer: **Kim
 > (AxidentDK), sole maintainer** — free to use, contributions at discretion

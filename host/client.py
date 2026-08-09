@@ -41,6 +41,7 @@ class Bridge:
         self._sock = socket.create_connection((host, port), timeout=timeout)
         self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self._ids = itertools.count(1)
+        self.events: list[dict] = []  # events received while waiting for responses
 
     # --- lifecycle -------------------------------------------------------------
     def close(self):
@@ -59,14 +60,39 @@ class Bridge:
     def request(self, method: str, **params):
         rid = next(self._ids)
         framing.write_frame(self._sock, {"id": rid, "method": method, "params": params})
-        resp = framing.read_frame(self._sock)
-        if resp is None:
+        while True:
+            msg = framing.read_frame(self._sock)
+            if msg is None:
+                raise ConnectionError("bridge closed the connection")
+            if msg.get("event"):
+                self.events.append(msg)  # event arrived mid-request — keep it
+                continue
+            if msg.get("id") != rid:
+                raise ConnectionError(f"response id {msg.get('id')} != request id {rid}")
+            if not msg.get("ok"):
+                raise BridgeError(msg.get("error") or {})
+            return msg.get("result")
+
+    def wait_event(self, timeout: float = 5.0):
+        """Block until the next event arrives (or return a buffered one).
+
+        Returns the event dict, or ``None`` on timeout.
+        """
+        if self.events:
+            return self.events.pop(0)
+        previous = self._sock.gettimeout()
+        self._sock.settimeout(timeout)
+        try:
+            msg = framing.read_frame(self._sock)
+        except (TimeoutError, socket.timeout):
+            return None
+        finally:
+            self._sock.settimeout(previous)
+        if msg is None:
             raise ConnectionError("bridge closed the connection")
-        if resp.get("id") != rid:
-            raise ConnectionError(f"response id {resp.get('id')} != request id {rid}")
-        if not resp.get("ok"):
-            raise BridgeError(resp.get("error") or {})
-        return resp.get("result")
+        if msg.get("event"):
+            return msg
+        raise ConnectionError(f"unexpected non-event frame while idle: {msg}")
 
     # --- the generic primitives --------------------------------------------------
     def hello(self):
@@ -89,3 +115,11 @@ class Bridge:
 
     def children(self, path: str):
         return self.request("children", path=path)
+
+    # --- observers ----------------------------------------------------------------
+    def observe(self, path: str, prop: str) -> int:
+        """Subscribe to property changes. Returns the subscription id."""
+        return self.request("observe", path=path, prop=prop)["sub"]
+
+    def unobserve(self, sub: int):
+        return self.request("unobserve", sub=sub)

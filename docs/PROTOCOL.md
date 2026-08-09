@@ -63,8 +63,24 @@ Three message kinds, all JSON objects:
 | `resolve` | `{path}` | `$ref` or `null` | does a path exist? |
 | `children` | `{path}` | `{prop: count \| $ref …}` | enumerate a node's navigable members |
 
-Phase 2 adds `observe` / `unobserve`. Phase 3 adds ergonomic conveniences
-(`clip_add_notes`, `browser_search`, …) built ON these primitives.
+### Observers (Phase 2 — implemented)
+
+| Method | params | result | notes |
+|---|---|---|---|
+| `observe` | `{path, prop}` | `{sub: N}` | attach a listener; events flow as unsolicited `{"event": true, "sub": N, "path", "prop", "value"}` frames |
+| `unobserve` | `{sub}` | `true` | detach; error `bad_request` on unknown sub |
+
+- Requires the property to have the LOM listener API
+  (`add_<prop>_listener` / `remove_<prop>_listener`) — else error
+  `not_observable`.
+- **Guaranteed teardown:** all of a client's listeners are removed when it
+  disconnects; all listeners are removed on bridge shutdown. No leaks.
+- **Never blocks Live:** events are enqueued to a per-client outbox drained by
+  a writer thread. A consumer that stops reading fills its outbox (1000
+  frames) and is disconnected rather than stalling Live.
+
+Phase 3 adds ergonomic conveniences (`clip_add_notes`, `browser_search`, …)
+built ON these primitives.
 
 ## Errors (structured `type` strings)
 

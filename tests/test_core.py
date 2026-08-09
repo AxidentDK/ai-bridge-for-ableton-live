@@ -126,7 +126,7 @@ def test_errors_are_structured():
 
 def test_server_roundtrip():
     _, ctx = make_context()
-    server = SocketServer(lambda req: dispatch.handle(ctx, req), port=0)
+    server = SocketServer(lambda req, client: dispatch.handle(ctx, req, client), port=0)
     server.start()
     try:
         client = socket.create_connection(("127.0.0.1", server.port), timeout=2.0)

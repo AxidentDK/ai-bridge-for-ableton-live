@@ -1,5 +1,7 @@
 # AI Bridge for Ableton Live
 
+*From here on: **AI Bridge**.*
+
 Connect AI assistants to Ableton Live. A clean, robust bridge that exposes the
 **complete Ableton Live Object Model (LOM)** to external programs — AI agents,
 scripts, tooling — over a simple local RPC protocol. Built for stability first
