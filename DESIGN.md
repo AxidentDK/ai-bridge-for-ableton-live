@@ -167,9 +167,10 @@ source of truth and it's allowed to change.
 ## 11. Open decisions (need Kim / need research)
 
 - **Name** of the project/repo (working: `ableton-live-bridge`). Ideas welcome.
-- **Live's bundled Python version** to target for the remote script — *confirm
-  against Live 12.x before Phase 1* (the remote script must match Live's
-  interpreter, not our dev venv).
+- ~~**Live's bundled Python version**~~ — **RESOLVED 2026-08-09: Python 3.11**
+  (verified from `.pyc` bytecode magic `3495` across all 1,372 Remote Scripts in
+  `C:\ProgramData\Ableton\Live 12 Suite`). Remote script targets **3.11,
+  stdlib-only**; the host side may use any Python.
 - **MCP-native vs plain-TCP-first**: build the raw bridge first, add the MCP
   server as a thin layer on top (recommended) — confirm.
 - Package/distribution: PyPI? A one-click installer for the remote script?
