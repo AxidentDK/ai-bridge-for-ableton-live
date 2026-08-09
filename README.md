@@ -1,15 +1,15 @@
-# ableton-live-bridge
+# AI Bridge for Ableton Live
 
-> Working name — subject to change.
+Connect AI assistants to Ableton Live. A clean, robust bridge that exposes the
+**complete Ableton Live Object Model (LOM)** to external programs — AI agents,
+scripts, tooling — over a simple local RPC protocol. Built for stability first
+(no crashes, no memory leaks inside Live), then completeness, clarity, and
+ergonomics.
 
-A clean, robust bridge that exposes the **complete Ableton Live Object Model
-(LOM)** to external programs — AI agents, scripts, tooling — over a simple local
-RPC protocol. Built for stability first (no crashes, no memory leaks inside
-Live), then completeness, clarity, and ergonomics.
-
-**Status:** blueprint / Phase 0 scaffold. Not yet functional — see
-[DESIGN.md](DESIGN.md) for the architecture and build plan, and
-[PORTING.md](PORTING.md) for what's been brought in so far.
+**Status:** Phase 1 complete — the generic core (get / set / call / resolve /
+children over the full LOM) is verified against a real Ableton Live 12.4
+instance. See [DESIGN.md](DESIGN.md) for the architecture and build plan, and
+[PORTING.md](PORTING.md) for reuse provenance.
 
 ## License & governance
 

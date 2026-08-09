@@ -1,6 +1,9 @@
 # Ableton Live Bridge — Design Blueprint
 
-> Working name: **ableton-live-bridge** (rename freely — see Open Decisions).
+> Name: **AI Bridge for Ableton Live** (repo slug `ai-bridge-for-ableton-live`;
+> settled 2026-08-10 — availability verified on GitHub/PyPI/npm; the
+> "X for Ableton Live" form follows Ableton's tolerated compatibility naming).
+> The control-surface entry inside Live displays as "Live Bridge".
 > Status: **blueprint / pre-code.** This is a living document; each build phase
 > may feed changes back into it. License: **Apache-2.0**. Maintainer: **Kim
 > (AxidentDK), sole maintainer** — free to use, contributions at discretion
@@ -166,7 +169,10 @@ source of truth and it's allowed to change.
 
 ## 11. Open decisions (need Kim / need research)
 
-- **Name** of the project/repo (working: `ableton-live-bridge`). Ideas welcome.
+- ~~**Name**~~ — **RESOLVED 2026-08-10: "AI Bridge for Ableton Live"**
+  (`ai-bridge-for-ableton-live`). Kim's rationale: name for the searcher, not
+  the geek — musicians search "AI … Ableton Live", and "AI Bridge…" also sorts
+  to the top of alphabetical tool lists.
 - ~~**Live's bundled Python version**~~ — **RESOLVED 2026-08-09: Python 3.11**
   (verified from `.pyc` bytecode magic `3495` across all 1,372 Remote Scripts in
   `C:\ProgramData\Ableton\Live 12 Suite`). Remote script targets **3.11,
