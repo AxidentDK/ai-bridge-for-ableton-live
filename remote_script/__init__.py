@@ -1,7 +1,15 @@
 """ableton-live-bridge — remote script (runs inside Live's Python 3.11).
 
-Live loads this package as a Control Surface and calls ``create_instance`` from
-here. That entry point arrives in the next Phase-1 increment; for now this
-package holds the wire framing (``framing.py``), which is pure stdlib and
-independent of the Live API.
+Live loads this package as a Control Surface and calls ``create_instance`` with a
+``c_instance`` handle. We import the Live-facing glue (``bridge.py``) *lazily*
+inside ``create_instance`` so that the pure modules — ``framing``, ``lom``,
+``dispatch``, ``server`` — can be imported and unit-tested OUTSIDE Live (where
+the ``Live`` / ``_Framework`` modules don't exist).
 """
+
+
+def create_instance(c_instance):
+    """Entry point Live calls to instantiate the control surface."""
+    from .bridge import Bridge
+
+    return Bridge(c_instance)
