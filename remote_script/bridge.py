@@ -42,7 +42,7 @@ class Bridge(ControlSurface):
         }
         self._server = SocketServer(self._handle_request, log=self.log_message)
         self._server.start()
-        self.log_message("ableton-live-bridge: server started on 127.0.0.1:8766")
+        self.log_message("AI Bridge for Ableton Live: server started on 127.0.0.1:8766")
 
     def disconnect(self):
         try:

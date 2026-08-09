@@ -1,4 +1,4 @@
-"""ableton-live-bridge — remote script (runs inside Live's Python 3.11).
+"""AI Bridge for Ableton Live — remote script (runs inside Live's Python 3.11).
 
 Live loads this package as a Control Surface and calls ``create_instance`` with a
 ``c_instance`` handle. We import the Live-facing glue (``bridge.py``) *lazily*
