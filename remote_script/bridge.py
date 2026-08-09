@@ -41,8 +41,10 @@ class Bridge(ControlSurface):
                 "python": "%d.%d.%d" % sys.version_info[:3],
             },
             "capabilities": ["get", "set", "call", "resolve", "children",
-                             "observe", "unobserve"],
+                             "observe", "unobserve",
+                             "clip_get_notes", "clip_add_notes", "clip_remove_notes"],
             "registry": self._registry,
+            "note_spec_factory": Live.Clip.MidiNoteSpecification,
         }
         self._server = SocketServer(
             self._handle_request, log=self.log_message,

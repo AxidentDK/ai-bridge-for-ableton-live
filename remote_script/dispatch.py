@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import traceback
 
-from . import lom
+from . import lom, notes
 
-BRIDGE_VERSION = "0.1.0"
+BRIDGE_VERSION = "0.2.0"
 
 
 def handle(context: dict, request: dict, client=None) -> dict:
@@ -90,6 +90,29 @@ def _unobserve(context, params, client):
     return context["registry"].unsubscribe(params["sub"])
 
 
+def _clip_get_notes(context, params, client):
+    return notes.get_notes(
+        context["roots"], params["path"],
+        params.get("from_time"), params.get("time_span"),
+        params.get("from_pitch"), params.get("pitch_span"),
+    )
+
+
+def _clip_add_notes(context, params, client):
+    factory = context.get("note_spec_factory")
+    if factory is None:
+        raise lom.LomError("internal", "note_spec_factory missing from context")
+    return notes.add_notes(context["roots"], params["path"], params["notes"], factory)
+
+
+def _clip_remove_notes(context, params, client):
+    return notes.remove_notes(
+        context["roots"], params["path"],
+        params.get("from_time"), params.get("time_span"),
+        params.get("from_pitch"), params.get("pitch_span"),
+    )
+
+
 _METHODS = {
     "hello": _hello,
     "ping": _ping,
@@ -100,4 +123,7 @@ _METHODS = {
     "children": _children,
     "observe": _observe,
     "unobserve": _unobserve,
+    "clip_get_notes": _clip_get_notes,
+    "clip_add_notes": _clip_add_notes,
+    "clip_remove_notes": _clip_remove_notes,
 }

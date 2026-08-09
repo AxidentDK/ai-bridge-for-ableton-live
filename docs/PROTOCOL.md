@@ -79,8 +79,21 @@ Three message kinds, all JSON objects:
   a writer thread. A consumer that stops reading fills its outbox (1000
   frames) and is disconnected rather than stalling Live.
 
-Phase 3 adds ergonomic conveniences (`clip_add_notes`, `browser_search`, …)
-built ON these primitives.
+### Clip notes (Phase 3 — implemented)
+
+The one convenience that must live in-process: Live's note API deals in
+`MidiNoteSpecification` / `MidiNote` objects that JSON `call` args can't
+express.
+
+| Method | params | result |
+|---|---|---|
+| `clip_get_notes` | `{path, from_time?, time_span?, from_pitch?, pitch_span?}` | `[{pitch, start_time, duration, velocity, mute, note_id?, probability?}, …]` |
+| `clip_add_notes` | `{path, notes: [{pitch, start_time, duration, velocity?, mute?}]}` | count added |
+| `clip_remove_notes` | `{path, from_time?, time_span?, from_pitch?, pitch_span?}` | `true` (whole clip when unwindowed) |
+
+All other conveniences (transport, tracks, devices, mixer) compose the generic
+primitives **host-side** (`host/api.py`), and `host/mcp_server.py` exposes the
+bridge as MCP tools over stdio (zero dependencies).
 
 ## Errors (structured `type` strings)
 
