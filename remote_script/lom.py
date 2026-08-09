@@ -125,7 +125,11 @@ def serialize(value):
         return [serialize(v) for v in value]
     if isinstance(value, dict):
         return {k: serialize(v) for k, v in value.items()}
-    return _ref(value, None)  # assume a LOM object; path unknown for returned objects
+    # Live's containers (song.tracks, clip_slots, ...) are Vector types — not
+    # list/tuple, but iterable. Serialize any non-mapping iterable as a sequence.
+    if not isinstance(value, (str, bytes)) and hasattr(value, "__iter__"):
+        return [serialize(v) for v in value]
+    return _ref(value, None)  # a LOM object; path unknown for returned objects
 
 
 def _ref(obj, path):
