@@ -74,6 +74,25 @@ TOOLS = [
                              "from_time": {"type": "number"}, "time_span": {"type": "number"},
                              "from_pitch": {"type": "integer"}, "pitch_span": {"type": "integer"}},
                             ["path"])},
+    {"name": "live_save_set",
+     "description": ("Save the current Live set (Ctrl+S to the Live window, verified via the "
+                     ".als file's mtime). Refuses on a never-saved set. Briefly moves focus "
+                     "to Live."),
+     "inputSchema": _schema({"timeout": {"type": "number"}}, [])},
+    {"name": "live_export",
+     "description": ("Render the arrangement to a WAV by driving Live's export dialog "
+                     "(inherits last-used export settings; file type must be WAV). Give "
+                     "start_beats+length_beats to set the render range; the rendered duration "
+                     "is verified against it. Briefly takes over keyboard focus."),
+     "inputSchema": _schema({"output_path": {"type": "string"},
+                             "start_beats": {"type": "number"},
+                             "length_beats": {"type": "number"},
+                             "timeout": {"type": "number"}}, ["output_path"])},
+    {"name": "live_analyze_wav",
+     "description": ("Measure a WAV file: integrated loudness (LUFS, ITU-R BS.1770-4), sample "
+                     "peak dBFS, and band energies. Requires numpy."),
+     "inputSchema": _schema({"path": {"type": "string", "description": "path to a .wav file"}},
+                            ["path"])},
 ]
 
 
@@ -126,6 +145,20 @@ def run_tool(name: str, args: dict):
         return b.request("clip_add_notes", **args)
     if name == "live_clip_remove_notes":
         return b.request("clip_remove_notes", **args)
+    if name == "live_save_set":
+        import render
+        return render.save_set(b, **args)
+    if name == "live_export":
+        import render
+        return render.export_set(b, args["output_path"],
+                                 args.get("start_beats"), args.get("length_beats"),
+                                 timeout=float(args.get("timeout", 240.0)))
+    if name == "live_analyze_wav":
+        try:
+            from audio_analysis import analyze_wav
+        except ImportError as exc:
+            raise ValueError(f"live_analyze_wav requires numpy ({exc})")
+        return analyze_wav(args["path"])
     raise ValueError(f"unknown tool {name!r}")
 
 

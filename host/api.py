@@ -120,6 +120,22 @@ class Live:
     def set_volume(self, track: int, value: float):
         self.b.set(f"live_set tracks {track} mixer_device volume", "value", float(value))
 
+    # --- beyond-LOM: save / render (see render.py) -----------------------------------------
+    def save(self, **kw) -> dict:
+        try:
+            from . import render
+        except ImportError:
+            import render
+        return render.save_set(self.b, **kw)
+
+    def export(self, output_path: str, start_beats: float | None = None,
+               length_beats: float | None = None, **kw) -> dict:
+        try:
+            from . import render
+        except ImportError:
+            import render
+        return render.export_set(self.b, output_path, start_beats, length_beats, **kw)
+
     # --- overview ------------------------------------------------------------------------------
     def summary(self) -> dict:
         hello = self.b.hello()

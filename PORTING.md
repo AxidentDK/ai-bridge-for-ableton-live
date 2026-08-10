@@ -11,7 +11,8 @@ this project's clean-room core as each build phase reaches them.
 | `reused/ableton_paths.py` | src/ | **Ready** — path detection, standalone | Phase 0/1 |
 | `reused/visual_capture.py`, `ocr.py` | src/ | **Ready-ish** — standalone capture utils | Phase 4 |
 | `reused/install_remote_script.py` | src/ | **Adapt** — retarget to this repo's `remote_script/` | Phase 1 |
-| `reused/export_set.py`, `save_set.py` | src/ | **Adapt** — UI automation; re-wire to new host | Phase 4 |
+| `reused/export_set.py`, `save_set.py` | src/ | **PORTED (Phase 4)** → `host/render.py` + `host/winui.py`, upgraded: AttachThreadInput focus grab with verification, export duration check vs beats×tempo (the stray-selection trap), eval/exec → generic primitives | done |
+| `reused/audio_analysis.py` | src/ | **PORTED (Phase 4)** → `host/audio_analysis.py` (verbatim; pure numpy+stdlib) | done |
 | `host/live_client.py` | examples/live.py | **Seed** — grows into the host client | Phase 1 |
 | `tests/` | tests/ | **Adapt** — assert the fork's API; the fake-Live simulator (`test_remote_bridge_fake_live.py`) is the reusable jewel, the rest get retargeted | Phase 2+ |
 
