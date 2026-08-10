@@ -52,13 +52,17 @@ which the AI can recall that exact setup onto any track, any time.
 
 ## Install
 
-1. Copy the `remote_script` folder into your Ableton User Library as
-   `Remote Scripts\AI_Bridge`:
-   - Windows: `C:\Users\<you>\Documents\Ableton\User Library\Remote Scripts\AI_Bridge`
-   - macOS: `~/Music/Ableton/User Library/Remote Scripts/AI_Bridge`
-2. Restart Live, then: **Preferences → Link, Tempo & MIDI → Control Surface** —
-   pick **AI Bridge** in an empty slot (leave its Input/Output on *None*).
-3. That's it. The bridge is listening on your own computer only
+1. **Install the bridge into Live** — one command, no dependencies:
+   ```bash
+   python install.py
+   ```
+   (It finds your Ableton User Library automatically and copies the remote
+   script in. `python install.py --status` shows where; `--uninstall` removes
+   it; `--user-library <path>` overrides a custom location.)
+2. **Restart Live**, then **Preferences → Link, Tempo & MIDI → Control
+   Surface** — pick **AI Bridge** in an empty slot (leave its Input/Output on
+   *None*).
+3. That's it. The bridge listens on your own computer only
    (`127.0.0.1:8766`) whenever Live is running.
 
 **Connect an AI via MCP** (Claude Code example):

@@ -1,20 +1,26 @@
 # Porting status
 
-What's been copied in from the MIT `ableton-live-mcp` fork, and its state. The
-fork stays intact and functional; these are **copies**, staged for adaptation to
-this project's clean-room core as each build phase reaches them.
+Provenance of code adapted from the MIT-licensed `ableton-live-mcp` fork (which
+stays intact — see `NOTICE`). Ported code was reimplemented into this project's
+clean-room structure and tested here; nothing from the fork runs against our
+core unmodified.
 
-| Path | Origin (MIT) | Status | Wired in at |
-|---|---|---|---|
-| `m4l/` (AgentAudioTap, m4l host) | m4l/ | **Ready** — self-contained (socket/file comms) | Phase 4 |
-| `reused/audio_analysis.py` | src/ | **Ready** — numpy-only, standalone | Phase 4 |
-| `reused/ableton_paths.py` | src/ | **Ready** — path detection, standalone | Phase 0/1 |
-| `reused/visual_capture.py`, `ocr.py` | src/ | **Ready-ish** — standalone capture utils | Phase 4 |
-| `reused/install_remote_script.py` | src/ | **Adapt** — retarget to this repo's `remote_script/` | Phase 1 |
-| `reused/export_set.py`, `save_set.py` | src/ | **PORTED (Phase 4)** → `host/render.py` + `host/winui.py`, upgraded: AttachThreadInput focus grab with verification, export duration check vs beats×tempo (the stray-selection trap), eval/exec → generic primitives | done |
-| `reused/audio_analysis.py` | src/ | **PORTED (Phase 4)** → `host/audio_analysis.py` (verbatim; pure numpy+stdlib) | done |
-| `host/live_client.py` | examples/live.py | **Seed** — grows into the host client | Phase 1 |
-| `tests/` | tests/ | **Adapt** — assert the fork's API; the fake-Live simulator (`test_remote_bridge_fake_live.py`) is the reusable jewel, the rest get retargeted | Phase 2+ |
+## Ported / absorbed (done)
 
-**Rule:** nothing in `reused/` or `tests/` is assumed working against our core
-until its phase explicitly wires and tests it. Treat as reference until then.
+| From (MIT fork) | Landed as | Notes |
+|---|---|---|
+| `export_set.py`, `save_set.py` | `host/render.py` + `host/winui.py` | Upgraded: AttachThreadInput focus grab **with verification**, export duration check vs beats×tempo (the stray-selection trap), and driven via the generic primitives (no `eval`/`exec`). |
+| `audio_analysis.py` | `host/audio_analysis.py` | Verbatim (numpy + stdlib); BS.1770-4 LUFS/peak/bands. |
+| `ableton_paths.py` (User Library detection) | `install.py` | Reimplemented as the installer's path resolution. |
+| `install_remote_script.py` | `install.py` | Clean cross-platform installer (install / update / status / uninstall). |
+| fork test suite | own suite in `tests/` | Rewrote clean, pytest-free tests against our modules (framing, core, observers, notes, mcp, render). The fork's fake-Live test targeted the fork's server/tap, not our core — dropped. |
+
+## Still staged for a later phase
+
+| Path | For | Phase |
+|---|---|---|
+| `m4l/` (AgentAudioTap, m4l host) | real-time audio capture / listening | 4b (v1.1) |
+| `reused/visual_capture.py`, `reused/ocr.py` | verifying M4L device UIs during the tap build | 4b (v1.1) |
+
+**Rule:** nothing under `reused/` is assumed working against our core until its
+phase explicitly wires and tests it.
