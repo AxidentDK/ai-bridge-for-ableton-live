@@ -120,6 +120,59 @@ class Live:
     def set_volume(self, track: int, value: float):
         self.b.set(f"live_set tracks {track} mixer_device volume", "value", float(value))
 
+    # --- housekeeping: clean up unused tracks --------------------------------------------
+    def track_is_empty(self, i: int) -> bool:
+        """A track is 'unused' only if it has no clips AND no devices.
+
+        Conservative on purpose: a track you've loaded an instrument onto, or
+        written any clip into (session or arrangement), is never considered
+        unused — only truly pristine tracks (like a new set's defaults) are.
+        """
+        base = f"live_set tracks {i}"
+        if self.b.get(base, "devices"):
+            return False
+        if self.b.get(base, "arrangement_clips"):
+            return False
+        slots = self.b.get(base, "clip_slots")
+        for s in range(len(slots)):
+            if self.b.get(f"{base} clip_slots {s}", "has_clip"):
+                return False
+        return True
+
+    def unused_tracks(self) -> list[dict]:
+        n = len(self.b.get("live_set", "tracks"))
+        out = []
+        for i in range(n):
+            if self.track_is_empty(i):
+                out.append({"index": i, "name": self.b.get(f"live_set tracks {i}", "name")})
+        return out
+
+    def cleanup_unused_tracks(self, dry_run: bool = False) -> dict:
+        """Delete unused (no clips + no devices) tracks. dry_run just reports.
+
+        Live requires a set to keep at least one track, so if every track is
+        unused, one is left behind (reported as ``kept_empty``).
+        """
+        unused = self.unused_tracks()
+        if dry_run:
+            return {"count": len(unused), "would_remove": unused,
+                    "remaining": len(self.b.get("live_set", "tracks"))}
+        removed, kept = [], None
+        total = len(self.b.get("live_set", "tracks"))
+        # delete high index first so lower indices don't shift under us
+        for t in sorted(unused, key=lambda t: t["index"], reverse=True):
+            if total <= 1:
+                kept = t  # Live won't delete the final remaining track
+                break
+            self.b.call("live_set", "delete_track", t["index"])
+            removed.append(t)
+            total -= 1
+        result = {"count": len(unused), "removed": removed,
+                  "remaining": len(self.b.get("live_set", "tracks"))}
+        if kept is not None:
+            result["kept_empty"] = f"{kept['name']} (Live requires at least one track)"
+        return result
+
     # --- beyond-LOM: save / render (see render.py) -----------------------------------------
     def save(self, **kw) -> dict:
         try:

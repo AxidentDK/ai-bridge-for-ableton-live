@@ -223,9 +223,14 @@ def _drive_export_dialog(output_path: str, dialog_delay: float) -> None:
         winui.send_keys(winui.chord(winui.VK_CONTROL, winui.VK_SHIFT, winui.VK_R))
         time.sleep(dialog_delay)                                  # export settings dialog
         winui.send_keys(winui.chord(winui.VK_RETURN))             # confirm last-used settings
-        time.sleep(dialog_delay)                                  # native save dialog
-        winui.type_text(output_path)                              # full path into name field
-        time.sleep(0.3)
+        time.sleep(dialog_delay + 1.0)                            # let the native save dialog fully appear
+        # The filename field opens pre-populated with the LAST-used name/folder;
+        # select-all first so our full path REPLACES it (typing alone appends /
+        # races the remembered value — a real failure mode on re-export).
+        winui.send_keys(winui.chord(winui.VK_CONTROL, winui.VK_A))
+        time.sleep(0.2)
+        winui.type_text(output_path)                              # full path replaces the selection
+        time.sleep(0.5)
         winui.send_keys(winui.chord(winui.VK_RETURN))             # start the render
     elif winui.IS_MACOS:
         escaped = output_path.replace("\\", "\\\\").replace('"', '\\"')

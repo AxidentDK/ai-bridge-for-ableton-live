@@ -93,6 +93,11 @@ TOOLS = [
                      "peak dBFS, and band energies. Requires numpy."),
      "inputSchema": _schema({"path": {"type": "string", "description": "path to a .wav file"}},
                             ["path"])},
+    {"name": "live_cleanup_tracks",
+     "description": ("Delete unused tracks from the set — a track with NO clips (session or "
+                     "arrangement) AND NO devices. Conservative: never removes a track with a "
+                     "loaded instrument or any clip. Set dry_run=true to preview only."),
+     "inputSchema": _schema({"dry_run": {"type": "boolean"}}, [])},
 ]
 
 
@@ -159,6 +164,9 @@ def run_tool(name: str, args: dict):
         except ImportError as exc:
             raise ValueError(f"live_analyze_wav requires numpy ({exc})")
         return analyze_wav(args["path"])
+    if name == "live_cleanup_tracks":
+        from api import Live
+        return Live(b).cleanup_unused_tracks(dry_run=bool(args.get("dry_run", False)))
     raise ValueError(f"unknown tool {name!r}")
 
 

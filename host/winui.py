@@ -162,8 +162,8 @@ def chord(*vks) -> list:
     return downs + ups
 
 
-VK_CONTROL, VK_SHIFT, VK_RETURN = 0x11, 0x10, 0x0D
-VK_R, VK_S = 0x52, 0x53
+VK_CONTROL, VK_SHIFT, VK_RETURN, VK_ESCAPE = 0x11, 0x10, 0x0D, 0x1B
+VK_A, VK_R, VK_S = 0x41, 0x52, 0x53
 
 
 # --- macOS ----------------------------------------------------------------------
