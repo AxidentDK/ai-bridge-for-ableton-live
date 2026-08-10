@@ -112,6 +112,41 @@ def test_children_introspection():
     assert "start_playing" in kids["functions"]
 
 
+class StrictParam:
+    """Mimics a LOM DeviceParameter: its setter accepts only a float."""
+    def __init__(self):
+        self._v = 0.0
+
+    @property
+    def value(self):
+        return self._v
+
+    @value.setter
+    def value(self, x):
+        if type(x) is not float:
+            raise TypeError("did not match C++ signature (needs float)")
+        self._v = x
+
+
+def test_set_coerces_stringified_numbers():
+    from remote_script import lom
+    root = type("Holder", (), {})()
+    root.param = StrictParam()
+    roots = {"live_set": root}
+    # a string number is coerced to float and accepted (the MCP untyped-value case)
+    assert lom.set_(roots, "live_set param", "value", "0.82") is True
+    assert root.param.value == 0.82
+    # a bare int is coerced to float too
+    assert lom.set_(roots, "live_set param", "value", 1) is True
+    assert root.param.value == 1.0
+    # genuinely non-numeric still fails cleanly
+    try:
+        lom.set_(roots, "live_set param", "value", "loud")
+        assert False, "non-numeric string should not coerce"
+    except lom.LomError as e:
+        assert e.type == "not_writable"
+
+
 def test_errors_are_structured():
     _, ctx = make_context()
     bad_path = call(ctx, "get", path="live_set tracks 9", prop="name")

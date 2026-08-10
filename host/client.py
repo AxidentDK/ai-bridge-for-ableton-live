@@ -31,8 +31,10 @@ class BridgeError(RuntimeError):
 
     def __init__(self, error: dict):
         super().__init__(f"[{error.get('type')}] {error.get('message')}")
-        self.type = error.get("type")
-        self.detail = error.get("detail")
+        self.error = error or {}
+        self.type = self.error.get("type")
+        self.message = self.error.get("message")
+        self.detail = self.error.get("detail")
 
 
 class Bridge:

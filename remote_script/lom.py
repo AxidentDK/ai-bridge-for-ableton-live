@@ -69,11 +69,46 @@ def set_(roots: dict, path: str, prop: str, value):
     obj = resolve(roots, path)
     if not hasattr(obj, prop):
         raise LomError("no_such_property", f"{_typename(obj)} has no property {prop!r}")
+    real = deserialize(roots, value)
     try:
-        setattr(obj, prop, deserialize(roots, value))
-    except (AttributeError, TypeError, ValueError) as exc:
-        raise LomError("not_writable", f"cannot set {prop!r} on {_typename(obj)}: {exc}")
-    return True
+        setattr(obj, prop, real)
+        return True
+    except Exception as first:
+        # LOM setters are strict — a DeviceParameter wants a float, not "0.82".
+        # Untyped callers (LLMs sending JSON through an unconstrained schema)
+        # routinely pass numbers as strings, or int/float swapped. Retry with
+        # sensible coercions before giving up.
+        for coerced in _coercions(real):
+            try:
+                setattr(obj, prop, coerced)
+                return True
+            except Exception:
+                continue
+        raise LomError("not_writable", f"cannot set {prop!r} on {_typename(obj)}: {first}")
+
+
+def _coercions(v):
+    """Alternative typings to try when a strict LOM setter rejects the value."""
+    if isinstance(v, bool):
+        return []
+    if isinstance(v, str):
+        s, out = v.strip(), []
+        try:
+            out.append(int(s))
+        except ValueError:
+            pass
+        try:
+            out.append(float(s))
+        except ValueError:
+            pass
+        if s.lower() in ("true", "false"):
+            out.append(s.lower() == "true")
+        return out
+    if isinstance(v, float) and v.is_integer():
+        return [int(v)]
+    if isinstance(v, int):
+        return [float(v)]
+    return []
 
 
 def call(roots: dict, path: str, func: str, args):
