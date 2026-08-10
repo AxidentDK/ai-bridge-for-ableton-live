@@ -43,6 +43,37 @@ outside way in — not to us, not to anyone). There are good workarounds — for
 example, saving a plugin *with your chosen sound* as a Live preset once, after
 which the AI can recall that exact setup onto any track, any time.
 
+## How you use it — you just ask
+
+Once the bridge is enabled and your AI assistant is connected, there's nothing
+to click or configure. You **talk** — plain English, at the start of a session
+or any time mid-flow — and you watch it happen in Live. A few things you can say:
+
+**Getting around**
+- *"Switch to Arranger view."* (or *"show me the session grid"*)
+- *"What's in my set right now?"*
+
+**Building**
+- *"Add a MIDI track with Operator and call it Lead."*
+- *"Write an 8-bar Am–F–C–G progression on the pad track."*
+- *"Give me a simple bassline under those chords."*
+
+**Playing & mixing**
+- *"Play from the top."* / *"Stop."*
+- *"Set the tempo to 90."*
+- *"Turn the bass down 3 dB and pan the lead a little left."*
+
+**Finishing & housekeeping**
+- *"Clean up the unused tracks."*
+- *"Render the arrangement to a WAV and tell me how loud it is in LUFS."*
+- *"Save the set."*
+
+**Keeping watch**
+- *"Tell me if the tempo changes while I'm working."*
+
+You stay in control the whole time — you see and hear every change as it
+happens, you can undo anything in Live, and nothing leaves your computer.
+
 ## What you need
 
 1. **Ableton Live 12** (tested on 12.4, Windows — macOS should work, untested).
