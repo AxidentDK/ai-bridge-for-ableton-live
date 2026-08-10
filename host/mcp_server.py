@@ -93,6 +93,10 @@ TOOLS = [
                      "peak dBFS, and band energies. Requires numpy."),
      "inputSchema": _schema({"path": {"type": "string", "description": "path to a .wav file"}},
                             ["path"])},
+    {"name": "live_show_view",
+     "description": ("Switch Live's main view. name = Arranger | Session | Browser | "
+                     "Detail | Detail/Clip | Detail/DeviceChain."),
+     "inputSchema": _schema({"name": {"type": "string"}}, ["name"])},
     {"name": "live_cleanup_tracks",
      "description": ("Delete unused tracks from the set — a track with NO clips (session or "
                      "arrangement) AND NO devices. Conservative: never removes a track with a "
@@ -167,6 +171,10 @@ def run_tool(name: str, args: dict):
     if name == "live_cleanup_tracks":
         from api import Live
         return Live(b).cleanup_unused_tracks(dry_run=bool(args.get("dry_run", False)))
+    if name == "live_show_view":
+        from api import Live
+        Live(b).show_view(args["name"])
+        return f"showing {args['name']}"
     raise ValueError(f"unknown tool {name!r}")
 
 

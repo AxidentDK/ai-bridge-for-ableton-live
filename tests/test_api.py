@@ -42,6 +42,28 @@ def make():
     ])
 
 
+class RecordingBridge(FakeBridge):
+    def __init__(self):
+        super().__init__([])
+        self.calls = []
+
+    def call(self, path, func, *args):
+        self.calls.append((path, func, args))
+
+
+def test_view_switch_helpers():
+    b = RecordingBridge()
+    live = Live(b)
+    live.show_arranger()
+    live.show_session()
+    live.show_view("Detail/Clip")
+    assert b.calls == [
+        ("live_app view", "show_view", ("Arranger",)),
+        ("live_app view", "show_view", ("Session",)),
+        ("live_app view", "show_view", ("Detail/Clip",)),
+    ]
+
+
 def test_unused_detection():
     live = Live(make())
     unused = [t["name"] for t in live.unused_tracks()]

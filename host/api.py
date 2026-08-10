@@ -120,6 +120,21 @@ class Live:
     def set_volume(self, track: int, value: float):
         self.b.set(f"live_set tracks {track} mixer_device volume", "value", float(value))
 
+    # --- views ---------------------------------------------------------------------------
+    def show_view(self, name: str):
+        """Switch a main view. Names: 'Arranger', 'Session', 'Browser',
+        'Detail', 'Detail/Clip', 'Detail/DeviceChain'."""
+        self.b.call("live_app view", "show_view", name)
+
+    def show_arranger(self):
+        self.show_view("Arranger")
+
+    def show_session(self):
+        self.show_view("Session")
+
+    def is_view_visible(self, name: str) -> bool:
+        return bool(self.b.call("live_app view", "is_view_visible", name))
+
     # --- housekeeping: clean up unused tracks --------------------------------------------
     def track_is_empty(self, i: int) -> bool:
         """A track is 'unused' only if it has no clips AND no devices.
