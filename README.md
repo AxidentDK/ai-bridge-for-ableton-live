@@ -49,6 +49,13 @@ Once the bridge is enabled and your AI assistant is connected, there's nothing
 to click or configure. You **talk** — plain English, at the start of a session
 or any time mid-flow — and you watch it happen in Live. A few things you can say:
 
+> **One habit worth keeping: save first.** As soon as you open or start a new
+> project, do a quick **File → Save As** yourself — give it a name and a home on
+> disk. From then on the AI can save it for you any time you ask (*"save the
+> set"*). It deliberately won't drive that *first* Save-As dialog, so your
+> project can never be written somewhere you didn't choose. Same rule as always:
+> save early, save often.
+
 **Getting around**
 - *"Switch to Arranger view."* (or *"show me the session grid"*)
 - *"What's in my set right now?"*
