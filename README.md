@@ -2,7 +2,7 @@
 
 *(short name: **AI Bridge**)*
 
-> **Let an AI assistant work inside Ableton Live with you.**
+> **More than a connection — let an AI compose, mix, automate, render, and *listen* inside your Live set.**
 
 AI Bridge is a small add-on for Ableton Live. Once it's enabled, an AI
 assistant — or any program you trust — can reach the controls in your Live set:

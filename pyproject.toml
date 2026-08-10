@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ai-bridge-for-ableton-live"
 version = "0.5.0"
-description = "Connect AI assistants to Ableton Live — the full Live Object Model over a simple local RPC."
+description = "More than a connection — let an AI compose, mix, automate, render, and listen inside Ableton Live. Full Live Object Model over a simple local RPC."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
