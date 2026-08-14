@@ -2,6 +2,12 @@
 
 *(short name: **AI Bridge**)*
 
+> ⚠️ **Work in progress — early public release.**
+> The bridge works today and its test suite is green, but the project is not
+> finished: features are still being added, and details can change between
+> versions. Try it, play with it, tell us what breaks — but don't lean on it in
+> the middle of a deadline session.
+
 > **More than a connection — let an AI compose, mix, automate, render, and *listen* inside your Live set.**
 
 AI Bridge is a small add-on for Ableton Live. Once it's enabled, an AI
@@ -12,6 +18,35 @@ hear everything happen. You keep full control the whole time — nothing leaves
 your computer, and nothing happens behind your back.
 
 It's free and open source (Apache-2.0).
+
+## Two layers — and you only need the first
+
+**The bridge is the light part, and it is all you need to start.** It installs in
+minutes, needs nothing but Python, downloads no models, and sends nothing off your
+computer. Everything described below works with the bridge on its own.
+
+**The listening module is an optional heavy part you can add later.** It is a
+separate program that listens through your sample library once and writes down what
+it heard — style, mood, instrument, character — so the AI can find sounds by what
+they *sound like* ("a melancholic pad", "a dusty break") instead of by filename.
+It's heavier by nature: it runs a trained audio model, so it wants real disk space
+and real CPU time.
+
+**It is not a requirement, and nothing breaks without it.** The bridge checks
+whether it's there. If it isn't, searching falls back to filenames plus Live 12's
+own audio similarity, and the answer tells you which was used — so you always know
+whether something actually listened, or just matched a name.
+
+**That said, it is the recommended setup, and the reason is simple.** Without ears,
+the AI works from names somebody else typed years ago. A large sample library is
+effectively invisible to it — thousands of files it can only guess at. With ears, it
+can weigh up what you actually own and pick the *right* sound rather than a
+plausibly-named one. If you want the AI to make full and effective use of what is
+already on your drive, add the listening module.
+
+> **Status:** the bridge's half is built and shipping — it already detects the
+> module and degrades cleanly when it's absent. The listening module itself is
+> still in development.
 
 ## What can the AI actually do?
 
