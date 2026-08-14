@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-bridge-for-ableton-live"
+version = "0.6.0"
+description = "More than a connection — let an AI compose, mix, automate, render, and listen inside Ableton Live. Full Live Object Model over a simple local RPC."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "AxidentDK" }]
+keywords = ["ableton", "ableton-live", "ai", "mcp", "music", "midi", "daw", "live-object-model"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Multimedia :: Sound/Audio :: MIDI",
+]
+dependencies = []  # the bridge + host + MCP server are stdlib-only
+
+[project.optional-dependencies]
+analyze = ["numpy>=1.24"]  # only for live_analyze_wav (LUFS / peak / bands)
+
+[project.urls]
+Homepage = "https://github.com/AxidentDK/ai-bridge-for-ableton-live"
+Repository = "https://github.com/AxidentDK/ai-bridge-for-ableton-live"
+Issues = "https://github.com/AxidentDK/ai-bridge-for-ableton-live/issues"
+
+[project.scripts]
+ai-bridge-mcp = "host.mcp_server:main"
+ai-bridge-install = "install:main"
+
+[tool.setuptools]
+# The remote_script package is installed INTO Live by install.py, not via pip.
+# pip packaging ships the host side (client, api, MCP server) + the installer.
+py-modules = ["install"]
+
+[tool.setuptools.packages.find]
+include = ["host*"]

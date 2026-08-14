@@ -1,0 +1,24 @@
+# Gemini API key — copy this file to "gemini_api_key.txt" and paste your key below.
+#
+# Get one at https://aistudio.google.com/apikey
+#
+# Rules of this file:
+#   - the FIRST line that is not blank and does not start with # is taken as the key
+#   - lines starting with # are comments and are ignored
+#   - "gemini_api_key.txt" is gitignored; THIS .example file is not, so never put a
+#     real key in it
+#
+# If no key is found, the bridge keeps using whichever MCP client is connected.
+# That is the default and needs no key — a missing key is not an error.
+#
+# Check which backend is active:
+#   python -m host.backend
+#
+# Alternatives to this file, checked first / last:
+#   1. the GEMINI_API_KEY environment variable   (wins over this file)
+#   2. this file, in the repo root
+#   3. ~/.ai-bridge/gemini_api_key.txt           (if you prefer it outside the repo)
+#
+# Optional: override the model with the GEMINI_MODEL environment variable.
+
+PASTE_YOUR_KEY_HERE

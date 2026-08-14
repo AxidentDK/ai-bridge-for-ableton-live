@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Max for Live build artifacts
+m4l/generated/
+# BUILT devices are never published: Max bakes the [js] object's absolute argument
+# into the .amxd, so a built device carries the builder's own home directory and
+# works on no other machine. The .maxpat SOURCE is tracked and is clean.
+m4l/*.amxd
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Local logs / scratch
+*.log
+scratch/
+
+# OUR WORKING DOCS — kept locally, never published.
+# Design notes, porting logs, roadmaps and research. Useful to us, useless to a user
+# of the bridge, and historically where private paths and personal details collected.
+# The public docs are README.md, docs/GUIDE.md and docs/PROTOCOL.md.
+/DESIGN.md
+/PORTING.md
+/docs/ROADMAP.md
+/docs/COMPARISON.md
+/docs/AUDIO_UNDERSTANDING.md
+/docs/SIDECAR.md
+
+# Personal terms for scripts/check_private.py. Kept local ON PURPOSE: a checker that
+# hard-codes your private folder names would publish what it is meant to hide.
+.private-terms
+
+# SECRETS — never publish. This repo is PUBLIC.
+# The .example file IS tracked (it is a template and holds no key).
+secrets/
+*api_key*.txt
+!*api_key*.txt.example
+*.key
+
+# Private agent-instruction files — kept LOCAL, never published.
+# These guide the AI assistant while developing; they are private workflow and
+# irrelevant to the program running. (README.md is public and stays tracked.)
+CLAUDE.md
+AGENTS.md
+.claude/
