@@ -1,0 +1,16 @@
+# Copy to ".private-terms" (gitignored) and list anything that should never be
+# published from this repo — one term per line, case-insensitive substring match.
+#
+# The point of keeping it OUT of git: a checker that hard-codes your private folder
+# names would publish exactly what it is meant to hide.
+#
+# Good candidates:
+#   - your sample-library folder names
+#   - machine / host names on your network
+#   - your username, if it differs from anything already public in NOTICE
+#   - client or project names under NDA
+#
+# Silence a false positive with "# noqa: private" on that line.
+
+# my-sample-pack-folder
+# my-desktop-name

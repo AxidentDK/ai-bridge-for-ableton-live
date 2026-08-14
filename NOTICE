@@ -1,0 +1,23 @@
+AI Bridge for Ableton Live (ai-bridge-for-ableton-live)
+Copyright 2026 Kim (AxidentDK)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+A copy of the License is in the LICENSE file in this repository.
+
+------------------------------------------------------------------------
+Third-party reused software
+------------------------------------------------------------------------
+
+This product reuses portions of the "ableton-live-mcp" project
+  https://github.com/bschoepke/ableton-live-mcp
+licensed under the MIT License, Copyright (c) 2026 Ableton Live MCP
+contributors. The MIT terms continue to apply to the reused portions,
+which currently include:
+
+  - m4l/               (Agent Audio Tap + M4L host devices)
+  - tests/             (fake-Live simulator + tests, staged for adaptation)
+  - host/live_client.py (minimal bridge client seed)
+
+The listed paths are the authoritative record of what is reused. Everything
+else in this repository is original work under the Apache-2.0 terms above.
