@@ -255,13 +255,20 @@ TOOLS = [
                      "expanded by Live 12's acoustic embeddings. That still returns real "
                      "results, but the words then come from whoever named the file rather "
                      "than from anything that listened, and the reply says which path was "
-                     "used. Absence of the sidecar is never an error."),
+                     "used. Absence of the sidecar is never an error. Files shorter "
+                     "than ~2s are treated as ONE-SHOTS: genre/mood/style verdicts are "
+                     "suppressed for them, because those models were trained on full "
+                     "tracks and answer a snare from their training priors rather than "
+                     "from the sound. Audio-event and NSynth verdicts are kept, being "
+                     "trained on events and single notes. Set include_unreliable to "
+                     "see the suppressed tags anyway."),
      "inputSchema": _schema({"query": {"type": "string"}, "genre": {"type": "string"},
                              "mood": {"type": "string"}, "instrument": {"type": "string"},
                              "event": {"type": "string"},
                              "tag": {"type": "string"},
                              "min_confidence": {"type": "number"},
                              "limit": {"type": "integer"},
+                             "include_unreliable": {"type": "boolean"},
                              "db_path": {"type": "string"}})},
     {"name": "live_sidecar_status",
      "description": ("Is the listening sidecar installed, and what has it analysed? Reports "
@@ -648,7 +655,8 @@ def run_tool(name: str, args: dict):
                                 args.get("instrument"),
                                 float(args.get("min_confidence", 0.0)),
                                 int(args.get("limit", 20)), args.get("db_path"),
-                                args.get("event"), args.get("tag"))
+                                args.get("event"), args.get("tag"),
+                                bool(args.get("include_unreliable", False)))
         except LookupError as exc:
             import similar
             asked_by_meaning = [k for k in ("genre", "mood", "instrument") if args.get(k)]
