@@ -158,9 +158,19 @@ def status(db_path: str | None = None) -> dict:
     }
 
 
+#: Which recorded namespaces each search term should reach. Producers name a
+#: namespace after the model that made the claim, so the mapping lives here.
+_NS_PATTERNS = {
+    "genre": ("%genre%", "%style%", "%top50tags%"),
+    "mood": ("%mood%", "%theme%"),
+    "instrument": ("%instrument%", "%timbre%", "%voice%"),
+}
+
+
 def find(query: str | None = None, genre: str | None = None, mood: str | None = None,
          instrument: str | None = None, min_confidence: float = 0.0,
-         limit: int = 20, db_path: str | None = None) -> dict:
+         limit: int = 20, db_path: str | None = None,
+         event: str | None = None, tag: str | None = None) -> dict:
     """Search the sidecar's tags. Raises LookupError if it isn't available.
 
     The caller decides what to do about that — see ``mcp_server`` for the fallback,
@@ -172,13 +182,31 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
 
     wheres: list[str] = ["f.error IS NULL"]
     params: list = []
-    wanted = [("genre", genre), ("mood", mood), ("instrument", instrument)]
-    for namespace, value in wanted:
+    # Namespaces are matched by PATTERN, not equality. A producer records the head
+    # that made each claim — `mtg_jamendo_moodtheme`, `mood_happy`, `nsynth_instrument`
+    # — because that provenance is worth keeping. Demanding namespace = 'mood' found
+    # nothing at all across 897k real tags, which is how this was caught.
+    wanted = [(_NS_PATTERNS["genre"], genre),
+              (_NS_PATTERNS["mood"], mood),
+              (_NS_PATTERNS["instrument"], instrument)]
+    for patterns, value in wanted:
         if value:
+            ns_clause = " OR ".join("t.namespace LIKE ?" for _ in patterns)
             wheres.append(
-                "EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "
-                "AND t.namespace = ? AND t.label LIKE ? AND t.confidence >= ?)")
-            params += [namespace, f"%{value}%", float(min_confidence)]
+                f"EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "  # noqa: S608
+                f"AND ({ns_clause}) AND t.label LIKE ? AND t.confidence >= ?)")
+            params += [*patterns, f"%{value}%", float(min_confidence)]
+    if event:
+        wheres.append(
+            "EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "
+            "AND t.namespace = 'audio_event' AND t.label LIKE ? AND t.confidence >= ?)")
+        params += [f"%{event}%", float(min_confidence)]
+    if tag:
+        # Any namespace at all — the escape hatch for a vocabulary we did not predict.
+        wheres.append(
+            "EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "
+            "AND t.label LIKE ? AND t.confidence >= ?)")
+        params += [f"%{tag}%", float(min_confidence)]
     if query:
         wheres.append("f.path LIKE ?")
         params.append(f"%{query}%")
@@ -195,10 +223,25 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
         # hard way in similar.py, where it dropped every Place but the first).
         out = []
         for row in rows:
+            # NOT "top 8 by confidence". Two-class softmax heads saturate near 1.0, so
+            # sorting globally returns `wet=1.00, atonal=1.00, danceable=1.00` for every
+            # file while the labels that actually identify the sound — an AudioSet event
+            # at 0.3, a genre at 0.4 — never surface. Confidences are only comparable
+            # WITHIN a head, so take the best from each namespace instead, most
+            # informative namespaces first.
             tags = conn.execute(
-                "SELECT namespace, label, ROUND(confidence, 3) AS confidence FROM tags "
-                "WHERE file_id = ? AND confidence >= ? "
-                "ORDER BY confidence DESC LIMIT 8",
+                "SELECT namespace, label, confidence FROM ("
+                "  SELECT namespace, label, ROUND(confidence, 3) AS confidence,"
+                "         ROW_NUMBER() OVER (PARTITION BY namespace"
+                "                            ORDER BY confidence DESC) AS rank"
+                "  FROM tags WHERE file_id = ? AND confidence >= ?"
+                ") WHERE rank = 1 "
+                "ORDER BY CASE"
+                "  WHEN namespace = 'audio_event' THEN 0"
+                "  WHEN namespace LIKE '%instrument%' THEN 1"
+                "  WHEN namespace LIKE '%genre%' OR namespace LIKE '%style%' THEN 2"
+                "  WHEN namespace LIKE '%mood%' OR namespace LIKE '%theme%' THEN 3"
+                "  ELSE 4 END, confidence DESC LIMIT 8",
                 (row["id"], float(min_confidence))).fetchall()
             out.append({
                 "path": row["path"],
