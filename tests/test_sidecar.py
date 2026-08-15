@@ -40,7 +40,17 @@ def _build(path, *, schema_version=sidecar.SCHEMA_VERSION):
 
     conn.executemany(
         "INSERT INTO tags (file_id, namespace, label, confidence, model) VALUES (?,?,?,?,?)",
-        [(1, "genre", "tech house", 0.91, "m"), (1, "instrument", "kick drum", 0.97, "m"),
+        # File 1 is 0.9 s — a ONE-SHOT. It carries both kinds of verdict: ones from
+        # heads trained on full tracks (genre, mood_*, style) which are not to be
+        # believed at that length, and ones from heads trained on events and single
+        # notes (audio_event, nsynth_*) which are.
+        [(1, "genre", "tech house", 0.91, "m"),
+         (1, "mood_happy", "happy", 0.88, "m"),
+         (1, "style_discogs400", "Non-Music---Audiobook", 0.93, "m"),
+         (1, "audio_event", "Bass drum", 0.62, "m"),
+         (1, "nsynth_instrument", "mallet", 0.80, "m"),
+         (1, "instrument", "kick drum", 0.97, "m"),
+         # File 2 is 8.4 s — real music, so every head is fair game.
          (2, "mood", "melancholic", 0.88, "m"), (2, "genre", "ambient", 0.74, "m"),
          (2, "mood", "calm", 0.31, "m")])
     conn.execute("INSERT INTO properties (file_id, bpm, key, scale) VALUES (2, 82.0, 'D', 'minor')")
@@ -83,7 +93,9 @@ def test_status_reports_contents():
         assert info["available"] is True, info
         assert info["files_analyzed"] == 2          # the errored file is not counted
         assert info["files_failed"] == 1
-        assert info["namespaces"] == ["genre", "instrument", "mood"]
+        assert info["namespaces"] == ["audio_event", "genre", "instrument", "mood",
+                                      "mood_happy", "nsynth_instrument",
+                                      "style_discogs400"]
 
 
 def test_schema_version_mismatch_is_refused_not_guessed():
@@ -103,9 +115,53 @@ def test_find_by_mood():
 
 
 def test_find_by_genre_and_filename_together():
+    """The kick is 0.9 s, so its genre verdict is suppressed as unreliable — visible
+    only with include_unreliable. This changed deliberately; the old assertion
+    (matches == 1) is what a genre-trained model claiming to know a snare looks like."""
     with db():
-        assert sidecar.find(genre="tech house", query="kick")["matches"] == 1
+        assert sidecar.find(genre="tech house", query="kick")["matches"] == 0
+        assert sidecar.find(genre="tech house", query="kick",
+                            include_unreliable=True)["matches"] == 1
         assert sidecar.find(genre="tech house", query="pad")["matches"] == 0
+
+
+def test_one_shot_suppresses_music_trained_verdicts():
+    """A head trained on full tracks does not degrade quietly on a 0.9 s sample — it
+    answers from its training priors. Those answers must not match a search."""
+    with db():
+        for kwargs in ({"genre": "tech house"}, {"mood": "happy"},
+                       {"tag": "Audiobook"}):
+            assert sidecar.find(**kwargs)["matches"] == 0, kwargs
+            assert sidecar.find(**kwargs, include_unreliable=True)["matches"] == 1, kwargs
+
+
+def test_one_shot_keeps_event_and_single_note_verdicts():
+    """AudioSet and NSynth are trained on events and single notes, so they stay
+    trustworthy at that length — and they are the whole reason a drum library is
+    worth indexing."""
+    with db():
+        got = sidecar.find(event="Bass drum")
+        assert got["matches"] == 1, got
+        assert got["results"][0]["one_shot"] is True
+        labels = {t["label"] for t in got["results"][0]["tags"]}
+        assert "Bass drum" in labels and "mallet" in labels
+        # ...and the untrustworthy ones are not shown alongside them.
+        assert "Non-Music---Audiobook" not in labels
+        assert "tech house" not in labels
+
+
+def test_longer_files_keep_everything():
+    with db():
+        got = sidecar.find(mood="melancholic")
+        assert got["matches"] == 1, got
+        assert got["results"][0].get("one_shot") is None
+
+
+def test_results_are_ranked_by_relevance():
+    with db():
+        got = sidecar.find(tag="a", limit=5, include_unreliable=True)
+        scores = [r["relevance"] for r in got["results"]]
+        assert scores == sorted(scores, reverse=True), scores
 
 
 def test_min_confidence_filters_weak_tags():

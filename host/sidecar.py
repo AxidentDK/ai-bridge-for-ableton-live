@@ -189,11 +189,34 @@ _NS_PATTERNS = {
     "instrument": ("%instrument%", "%timbre%", "%voice%"),
 }
 
+#: Below this, a file is a ONE-SHOT rather than music. Not an arbitrary round number:
+#: the EffNet patch is 128 frames at a 256-sample hop and 16 kHz = 2.048 s, so a
+#: shorter file has to be padded or tiled to fill a window. The music-trained heads
+#: therefore never saw a full window of real audio for it.
+ONE_SHOT_SECONDS = 2.048
+
+#: Namespaces produced by heads trained on FULL MUSIC TRACKS. On a 0.2 s snare these
+#: do not degrade quietly — they answer with confidence from their training priors. A
+#: Kora one-shot came back `Non-Music---Audiobook` at 0.912, and a vocal chop scored
+#: `instrumental` at 0.87. Suppressed for short files.
+_MUSIC_TRAINED = ("%genre%", "%style%", "%theme%", "%top50tags%", "mtt",
+                  "mood_%", "danceability", "engagement%", "approachability%",
+                  "tonal_atonal", "voice_instrumental", "gender", "timbre",
+                  "mtg_jamendo_instrument")
+
+#: Trained on single notes or general audio events, so they stay trustworthy on a
+#: one-shot: `audio_event` (AudioSet) and the four `nsynth_*` heads.
+
+
+def _music_trained_sql(column: str = "t.namespace") -> str:
+    return "(" + " OR ".join(f"{column} LIKE ?" for _ in _MUSIC_TRAINED) + ")"
+
 
 def find(query: str | None = None, genre: str | None = None, mood: str | None = None,
          instrument: str | None = None, min_confidence: float = 0.0,
          limit: int = 20, db_path: str | None = None,
-         event: str | None = None, tag: str | None = None) -> dict:
+         event: str | None = None, tag: str | None = None,
+         include_unreliable: bool = False) -> dict:
     """Search the sidecar's tags. Raises LookupError if it isn't available.
 
     The caller decides what to do about that — see ``mcp_server`` for the fallback,
@@ -218,17 +241,28 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
     score_parts: list[str] = []
     score_params: list = []
 
+    # A tag from a music-trained head on a one-shot is not weak evidence, it is
+    # WRONG evidence — so such tags must not match a search or contribute to its
+    # ranking. The guard rides on the criterion itself rather than filtering results
+    # afterwards, otherwise a one-shot could still outrank real music on a bogus score.
+    guard = ("" if include_unreliable else
+             " AND (f.duration_sec IS NULL OR f.duration_sec >= ? "
+             f"OR NOT {_music_trained_sql()})")
+    guard_params: list = ([] if include_unreliable
+                          else [float(ONE_SHOT_SECONDS), *_MUSIC_TRAINED])
+
     def _criterion(ns_sql: str, ns_params: list, value: str) -> None:
         """Add one criterion to both the filter and the relevance score."""
         wheres.append(
             f"EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "        # noqa: S608
-            f"AND {ns_sql} AND t.label LIKE ? AND t.confidence >= ?)")
-        params.extend([*ns_params, f"%{value}%", float(min_confidence)])
+            f"AND {ns_sql} AND t.label LIKE ? AND t.confidence >= ?{guard})")
+        params.extend([*ns_params, f"%{value}%", float(min_confidence), *guard_params])
         score_parts.append(
             f"COALESCE((SELECT MAX(t.confidence) FROM tags t "            # noqa: S608
             f"WHERE t.file_id = f.id AND {ns_sql} AND t.label LIKE ? "
-            f"AND t.confidence >= ?), 0)")
-        score_params.extend([*ns_params, f"%{value}%", float(min_confidence)])
+            f"AND t.confidence >= ?{guard}), 0)")
+        score_params.extend([*ns_params, f"%{value}%", float(min_confidence),
+                             *guard_params])
 
     # Namespaces are matched by PATTERN, not equality. A producer records the head
     # that made each claim — `mtg_jamendo_moodtheme`, `mood_happy`, `nsynth_instrument`
@@ -272,12 +306,15 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
             # at 0.3, a genre at 0.4 — never surface. Confidences are only comparable
             # WITHIN a head, so take the best from each namespace instead, most
             # informative namespaces first.
+            short = (not include_unreliable and row["duration_sec"] is not None
+                     and row["duration_sec"] < ONE_SHOT_SECONDS)
+            hide = f" AND NOT {_music_trained_sql('namespace')}" if short else ""
             tags = conn.execute(
-                "SELECT namespace, label, confidence FROM ("
+                "SELECT namespace, label, confidence FROM ("   # noqa: S608
                 "  SELECT namespace, label, ROUND(confidence, 3) AS confidence,"
                 "         ROW_NUMBER() OVER (PARTITION BY namespace"
                 "                            ORDER BY confidence DESC) AS rank"
-                "  FROM tags WHERE file_id = ? AND confidence >= ?"
+                f"  FROM tags WHERE file_id = ? AND confidence >= ?{hide}"
                 ") WHERE rank = 1 "
                 "ORDER BY CASE"
                 "  WHEN namespace = 'audio_event' THEN 0"
@@ -285,7 +322,8 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
                 "  WHEN namespace LIKE '%genre%' OR namespace LIKE '%style%' THEN 2"
                 "  WHEN namespace LIKE '%mood%' OR namespace LIKE '%theme%' THEN 3"
                 "  ELSE 4 END, confidence DESC LIMIT 8",
-                (row["id"], float(min_confidence))).fetchall()
+                (row["id"], float(min_confidence),
+                 *(_MUSIC_TRAINED if short else ()))).fetchall()
             entry = {
                 "path": row["path"],
                 "relevance": round(float(row["relevance"] or 0.0), 3),
@@ -295,6 +333,9 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
                         if row["key"] else None),
                 "tags": [dict(t) for t in tags],
             }
+            if short:
+                # Say so, rather than letting a caller wonder where the genre went.
+                entry["one_shot"] = True
             preset = preset_for(row["path"])
             if preset:
                 # The match is preview audio; this is the thing worth loading.
