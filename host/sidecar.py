@@ -38,7 +38,7 @@ HOME_DB = Path.home() / ".ai-bridge" / DB_FILENAME
 
 # Bumped only on a BREAKING change. The bridge refuses a major it doesn't know rather
 # than guessing at columns, because a wrong guess here is a plausible wrong answer.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 #: Authoritative DDL. The sidecar builds to exactly this; the bridge only reads it.
 #: Kept here, in the consumer, so the contract cannot drift silently — a producer in
@@ -87,7 +87,13 @@ CREATE TABLE IF NOT EXISTS properties (
     kind           TEXT,              -- 'one_shot' | 'loop', by onset density
     onsets         INTEGER,           -- detected onsets; what `kind` was decided on
     bpm            REAL,              -- loops only
-    bpm_confidence REAL,              -- interval consistency, not a model score
+    bpm_confidence REAL,              -- how far the winning lag stood out, 0..1
+    -- How many bars the file was found to be. A tempo and its double are NOT the
+    -- same tempo: the same pulse written at 85 and at 170 differs in note values, so
+    -- the grid, the swing and every quantise decision differ with it. The bar count
+    -- is the evidence for which one a file actually is, and it is stored so the
+    -- claim can be checked rather than taken on trust. NULL = length did not settle it.
+    bars           INTEGER,
     key            TEXT,              -- 'F#'      loops only
     scale          TEXT,              -- 'major' | 'minor'
     key_strength   REAL,              -- margin over the runner-up key, not raw fit
@@ -398,7 +404,7 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
         for w in words:
             extra_params.extend([f"%{w}%", float(min_confidence), *guard_params])
     sql = (f"SELECT f.id, f.path, f.duration_sec, p.bpm, p.key, p.scale, "  # noqa: S608
-           f"p.kind, p.pitch_midi, p.pitch_hz, p.attack_ms, p.decay_ms, "
+           f"p.kind, p.bars, p.pitch_midi, p.pitch_hz, p.attack_ms, p.decay_ms, "
            f"p.stereo_width, p.stereo_correlation, p.loudness_lufs, "
            f"({relevance}) AS relevance{extra_cols} "
            f"FROM files f LEFT JOIN properties p ON p.file_id = f.id "
@@ -456,7 +462,7 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
             # as nulls: which of these EXIST is itself information — a pitch means the
             # file was heard as one hit, a BPM means it was heard as a bar of them.
             measured = {k: row[k] for k in
-                        ("kind", "pitch_midi", "pitch_hz", "attack_ms", "decay_ms",
+                        ("kind", "bars", "pitch_midi", "pitch_hz", "attack_ms", "decay_ms",
                          "stereo_width", "stereo_correlation", "loudness_lufs")
                         if row[k] is not None}
             if measured.get("pitch_midi") is not None:
