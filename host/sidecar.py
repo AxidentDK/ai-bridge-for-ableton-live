@@ -205,42 +205,62 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
 
     wheres: list[str] = ["f.error IS NULL"]
     params: list = []
+    # RELEVANCE. Each criterion contributes the confidence of its BEST matching tag,
+    # and the results are ordered by the total. Without this the query had LIMIT but
+    # no ORDER BY, so it returned the first N rows in insertion order — "a dark pad"
+    # and "something aggressive" came back with the identical three files.
+    #
+    # Honest limitation: confidences are strictly comparable only WITHIN a head, and a
+    # two-class softmax head saturates near 1.0 where a multi-label sigmoid head sits
+    # at 0.3. So a criterion answered by a binary head outweighs one answered by a
+    # multi-label head. It is still enormously better than insertion order, and the
+    # per-criterion scores are returned so a caller can see what drove the ranking.
+    score_parts: list[str] = []
+    score_params: list = []
+
+    def _criterion(ns_sql: str, ns_params: list, value: str) -> None:
+        """Add one criterion to both the filter and the relevance score."""
+        wheres.append(
+            f"EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "        # noqa: S608
+            f"AND {ns_sql} AND t.label LIKE ? AND t.confidence >= ?)")
+        params.extend([*ns_params, f"%{value}%", float(min_confidence)])
+        score_parts.append(
+            f"COALESCE((SELECT MAX(t.confidence) FROM tags t "            # noqa: S608
+            f"WHERE t.file_id = f.id AND {ns_sql} AND t.label LIKE ? "
+            f"AND t.confidence >= ?), 0)")
+        score_params.extend([*ns_params, f"%{value}%", float(min_confidence)])
+
     # Namespaces are matched by PATTERN, not equality. A producer records the head
     # that made each claim — `mtg_jamendo_moodtheme`, `mood_happy`, `nsynth_instrument`
     # — because that provenance is worth keeping. Demanding namespace = 'mood' found
     # nothing at all across 897k real tags, which is how this was caught.
-    wanted = [(_NS_PATTERNS["genre"], genre),
-              (_NS_PATTERNS["mood"], mood),
-              (_NS_PATTERNS["instrument"], instrument)]
-    for patterns, value in wanted:
+    for key, value in (("genre", genre), ("mood", mood), ("instrument", instrument)):
         if value:
-            ns_clause = " OR ".join("t.namespace LIKE ?" for _ in patterns)
-            wheres.append(
-                f"EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "  # noqa: S608
-                f"AND ({ns_clause}) AND t.label LIKE ? AND t.confidence >= ?)")
-            params += [*patterns, f"%{value}%", float(min_confidence)]
+            patterns = _NS_PATTERNS[key]
+            ns_sql = "(" + " OR ".join("t.namespace LIKE ?" for _ in patterns) + ")"
+            _criterion(ns_sql, list(patterns), value)
     if event:
-        wheres.append(
-            "EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "
-            "AND t.namespace = 'audio_event' AND t.label LIKE ? AND t.confidence >= ?)")
-        params += [f"%{event}%", float(min_confidence)]
+        _criterion("t.namespace = 'audio_event'", [], event)
     if tag:
         # Any namespace at all — the escape hatch for a vocabulary we did not predict.
-        wheres.append(
-            "EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "
-            "AND t.label LIKE ? AND t.confidence >= ?)")
-        params += [f"%{tag}%", float(min_confidence)]
+        _criterion("1=1", [], tag)
     if query:
         wheres.append("f.path LIKE ?")
         params.append(f"%{query}%")
 
-    sql = (f"SELECT f.id, f.path, f.duration_sec, p.bpm, p.key, p.scale "  # noqa: S608
+    # No criterion carries a confidence (filename-only search) -> nothing to rank by,
+    # so fall back to a stable alphabetical order rather than insertion order.
+    relevance = " + ".join(score_parts) if score_parts else "0"
+    order = "relevance DESC, f.path" if score_parts else "f.path"
+    sql = (f"SELECT f.id, f.path, f.duration_sec, p.bpm, p.key, p.scale, "  # noqa: S608
+           f"({relevance}) AS relevance "
            f"FROM files f LEFT JOIN properties p ON p.file_id = f.id "
-           f"WHERE {' AND '.join(wheres)} LIMIT ?")
-    params.append(int(limit))
+           f"WHERE {' AND '.join(wheres)} ORDER BY {order} LIMIT ?")
+    # SELECT parameters bind before WHERE parameters.
+    all_params = [*score_params, *params, int(limit)]
 
     with _connect(Path(info["database"])) as conn:
-        rows = conn.execute(sql, params).fetchall()
+        rows = conn.execute(sql, all_params).fetchall()
         # Fetch tags per row AFTER materializing rows: reusing one cursor for an outer
         # loop and inner queries silently truncates the outer result set (learned the
         # hard way in similar.py, where it dropped every Place but the first).
@@ -268,6 +288,7 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
                 (row["id"], float(min_confidence))).fetchall()
             entry = {
                 "path": row["path"],
+                "relevance": round(float(row["relevance"] or 0.0), 3),
                 "duration_sec": row["duration_sec"],
                 "bpm": row["bpm"],
                 "key": (f"{row['key']} {row['scale']}".strip()
