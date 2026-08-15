@@ -250,7 +250,12 @@ TOOLS = [
                              "include_self": {"type": "boolean"}})},
     {"name": "live_find_sound",
      "description": ("Find a clip or one-shot BY MEANING — genre, mood, instrument — using the "
-                     "listening sidecar if it is installed. If it is NOT installed this "
+                     "listening sidecar if it is installed. `query` is free text and "
+                     "searches both what a file was HEARD as and what it is CALLED; each "
+                     "result says which in `matched_by`, so a filename hit is never "
+                     "mistaken for a verdict. Use genre/mood/instrument/event/tag to "
+                     "restrict a term to the heads that can answer it. If the sidecar is "
+                     "NOT installed this "
                      "degrades automatically to live_similar_sounds: a filename match, "
                      "expanded by Live 12's acoustic embeddings. That still returns real "
                      "results, but the words then come from whoever named the file rather "

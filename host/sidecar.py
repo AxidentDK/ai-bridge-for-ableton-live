@@ -25,6 +25,7 @@ Nothing here needs the sidecar to exist. Everything degrades to "not available".
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from pathlib import Path
 
@@ -205,6 +206,11 @@ _GENERIC_EVENTS = (
     "Soundtrack music",
 )
 
+#: What a filename match is worth when `query` scores a file, against tag confidences
+#: on a 0-1 scale. Mid-scale on purpose: a confident verdict should outrank a name, a
+#: weak one should not. See the `query` branch of :func:`find` for the full reasoning.
+_NAME_WEIGHT = 0.5
+
 #: Below this, a file is a ONE-SHOT rather than music. Not an arbitrary round number:
 #: the EffNet patch is 128 frames at a 256-sample hop and 16 kHz = 2.048 s, so a
 #: shorter file has to be padded or tiled to fill a window. The music-trained heads
@@ -235,8 +241,15 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
          include_unreliable: bool = False) -> dict:
     """Search the sidecar's tags. Raises LookupError if it isn't available.
 
-    The caller decides what to do about that — see ``mcp_server`` for the fallback,
-    which lives at the tool layer so the policy is in one visible place.
+    ``query`` is free text and searches BOTH what the file was heard as and what it is
+    called; every other criterion is restricted to the namespaces that can answer it.
+    Each result reports ``matched_by`` so a heard verdict is never mistaken for a
+    filename hit.
+
+    The caller decides what to do about an unavailable sidecar — see ``mcp_server``
+    for the fallback, which lives at the tool layer so the policy is in one visible
+    place. That fallback is why ``query`` keeps its filename half: without the sidecar
+    it is the only seed acoustic similarity can start from.
     """
     info = status(db_path)
     if not info.get("available"):
@@ -295,19 +308,72 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
         # Any namespace at all — the escape hatch for a vocabulary we did not predict.
         _criterion("1=1", [], tag)
     if query:
-        wheres.append("f.path LIKE ?")
-        params.append(f"%{query}%")
+        # `query` is the parameter a caller reaches for first, and the tool promises to
+        # find things BY MEANING — so it searches what was HEARD as well as what the
+        # file is called. It used to be a bare `f.path LIKE`, which made
+        # query="cymbal" a filename grep wearing a listening result's clothes: files
+        # tagged `Steam` came back ranked 0.0 with nothing saying the audio was never
+        # consulted. Both halves are kept, because in a real library the NAME is also
+        # evidence — `Snares/Snare 08.wav` is a snare — just not the only evidence.
+        # Matched WORD BY WORD, not as a phrase. "vinyl crackle" is the kind of thing
+        # anyone actually types, and no single label reads that way — the file the user
+        # wanted is tagged `Crackle`, so a phrase LIKE finds it by name only and the
+        # listening contributes nothing. Words under three characters are dropped as
+        # noise ("a", "of"), and if that leaves nothing the whole string is used.
+        words = [w for w in re.split(r"[^\w]+", query) if len(w) >= 3] or [query]
+        name_sql = " OR ".join("f.path LIKE ?" for _ in words)
+        heard_one = (f"EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "  # noqa: S608
+                     f"AND t.label LIKE ? AND t.confidence >= ?{guard})")
+        heard_sql = " OR ".join(heard_one for _ in words)
+        wheres.append(f"(({name_sql}) OR ({heard_sql}))")
+        params.extend([f"%{w}%" for w in words])
+        for w in words:
+            params.extend([f"%{w}%", float(min_confidence), *guard_params])
+        # Weights, and why. The heard half contributes the tag's own confidence, so it
+        # stays on the same 0-1 scale as every other criterion. The name half is a
+        # yes/no fact with no confidence attached, so it needs a constant: _NAME_WEIGHT
+        # sits mid-scale deliberately, letting a confident verdict (0.8) outrank a
+        # filename while a weak one (0.3) does not. A file that is both named and heard
+        # as the thing scores highest, which is the ordering anyone would want.
+        #
+        # Averaged over the words rather than summed, so a two-word query stays on the
+        # same scale as a one-word one and cannot outrank other criteria by length
+        # alone. The consequence, worth being exact about: a query's scores are
+        # comparable only WITHIN that query — adding a word that matches little drags
+        # the average down, so `pad ambient` scores below `ambient` on the same file.
+        # Ranking only ever compares files within one query, where the ordering is the
+        # wanted one: matching more of the query wins, however the words are weighted.
+        per_word = (
+            f"COALESCE((SELECT MAX(t.confidence) FROM tags t "                # noqa: S608
+            f"WHERE t.file_id = f.id AND t.label LIKE ? "
+            f"AND t.confidence >= ?{guard}), 0) + "
+            f"(CASE WHEN f.path LIKE ? THEN {_NAME_WEIGHT} ELSE 0 END)")
+        score_parts.append(
+            "(" + " + ".join(per_word for _ in words) + f") / {float(len(words))}")
+        for w in words:
+            score_params.extend([f"%{w}%", float(min_confidence), *guard_params,
+                                 f"%{w}%"])
 
     # No criterion carries a confidence (filename-only search) -> nothing to rank by,
     # so fall back to a stable alphabetical order rather than insertion order.
     relevance = " + ".join(score_parts) if score_parts else "0"
     order = "relevance DESC, f.path" if score_parts else "f.path"
+    # Report WHICH half of a `query` matched. Without this the caller cannot tell a
+    # verdict from a filename — the exact confusion that made a `Steam`-tagged file
+    # look like a listening result for "cymbal".
+    extra_cols, extra_params = "", []
+    if query:
+        extra_cols = (f", (CASE WHEN ({name_sql}) THEN 1 ELSE 0 END) AS matched_name"
+                      f", (CASE WHEN ({heard_sql}) THEN 1 ELSE 0 END) AS matched_heard")
+        extra_params = [f"%{w}%" for w in words]
+        for w in words:
+            extra_params.extend([f"%{w}%", float(min_confidence), *guard_params])
     sql = (f"SELECT f.id, f.path, f.duration_sec, p.bpm, p.key, p.scale, "  # noqa: S608
-           f"({relevance}) AS relevance "
+           f"({relevance}) AS relevance{extra_cols} "
            f"FROM files f LEFT JOIN properties p ON p.file_id = f.id "
            f"WHERE {' AND '.join(wheres)} ORDER BY {order} LIMIT ?")
-    # SELECT parameters bind before WHERE parameters.
-    all_params = [*score_params, *params, int(limit)]
+    # SELECT parameters bind before WHERE parameters, in column order.
+    all_params = [*score_params, *extra_params, *params, int(limit)]
 
     with _connect(Path(info["database"])) as conn:
         rows = conn.execute(sql, all_params).fetchall()
@@ -355,6 +421,11 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
                         if row["key"] else None),
                 "tags": [dict(t) for t in tags],
             }
+            if query:
+                # "heard" means a tag carried the word; "name" means only the path did.
+                entry["matched_by"] = "+".join(
+                    w for w, on in (("heard", row["matched_heard"]),
+                                    ("name", row["matched_name"])) if on)
             if short:
                 # Say so, rather than letting a caller wonder where the genre went.
                 entry["one_shot"] = True
