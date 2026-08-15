@@ -258,6 +258,8 @@ TOOLS = [
                      "used. Absence of the sidecar is never an error."),
      "inputSchema": _schema({"query": {"type": "string"}, "genre": {"type": "string"},
                              "mood": {"type": "string"}, "instrument": {"type": "string"},
+                             "event": {"type": "string"},
+                             "tag": {"type": "string"},
                              "min_confidence": {"type": "number"},
                              "limit": {"type": "integer"},
                              "db_path": {"type": "string"}})},
@@ -645,7 +647,8 @@ def run_tool(name: str, args: dict):
             return sidecar.find(args.get("query"), args.get("genre"), args.get("mood"),
                                 args.get("instrument"),
                                 float(args.get("min_confidence", 0.0)),
-                                int(args.get("limit", 20)), args.get("db_path"))
+                                int(args.get("limit", 20)), args.get("db_path"),
+                                args.get("event"), args.get("tag"))
         except LookupError as exc:
             import similar
             asked_by_meaning = [k for k in ("genre", "mood", "instrument") if args.get(k)]
