@@ -44,9 +44,12 @@ can weigh up what you actually own and pick the *right* sound rather than a
 plausibly-named one. If you want the AI to make full and effective use of what is
 already on your drive, add the listening module.
 
-> **Status:** the bridge's half is built and shipping — it already detects the
-> module and degrades cleanly when it's absent. The listening module itself is
-> still in development.
+> **Status:** the bridge's half is built and shipping — it already detects the module
+> and degrades cleanly when it's absent. The listening module lives in its own
+> repository, [**ai-bridge-listener**](https://github.com/AxidentDK/ai-bridge-listener),
+> and is usable but still in development: it publishes its own measured accuracy
+> (82% of files land in the right family, 37% get named specifically) along with the
+> reasons for the weak categories.
 
 ## What can the AI actually do?
 
