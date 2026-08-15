@@ -38,7 +38,7 @@ HOME_DB = Path.home() / ".ai-bridge" / DB_FILENAME
 
 # Bumped only on a BREAKING change. The bridge refuses a major it doesn't know rather
 # than guessing at columns, because a wrong guess here is a plausible wrong answer.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 #: Authoritative DDL. The sidecar builds to exactly this; the bridge only reads it.
 #: Kept here, in the consumer, so the contract cannot drift silently — a producer in
@@ -78,19 +78,42 @@ CREATE TABLE IF NOT EXISTS tags (
 );
 
 -- Measured scalars: one row per file, not per label.
+-- WHICH of these are populated depends on `kind`. A one-shot gets a fundamental and
+-- no tempo; a loop gets a key and a tempo and no fundamental. That is deliberate: a
+-- BPM derived from one transient, or a "note" for a four-bar chord bed, is not a weak
+-- measurement but a meaningless one, and a NULL says so where a number would lie.
 CREATE TABLE IF NOT EXISTS properties (
     file_id        INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
-    bpm            REAL,
-    bpm_confidence REAL,
-    key            TEXT,              -- 'F#'
+    kind           TEXT,              -- 'one_shot' | 'loop', by onset density
+    onsets         INTEGER,           -- detected onsets; what `kind` was decided on
+    bpm            REAL,              -- loops only
+    bpm_confidence REAL,              -- interval consistency, not a model score
+    key            TEXT,              -- 'F#'      loops only
     scale          TEXT,              -- 'major' | 'minor'
-    key_strength   REAL,
+    key_strength   REAL,              -- margin over the runner-up key, not raw fit
+    pitch_hz       REAL,              -- one-shots only: YIN fundamental
+    pitch_midi     INTEGER,
+    pitch_confidence REAL,
+    attack_ms      REAL,              -- time to peak; lets a caller correct placement
+    decay_ms       REAL,              -- T60, extrapolated from the first 20 dB
+    stereo_width   REAL,              -- side/(mid+side) ABOVE 250 Hz; 0 = mono
+    stereo_correlation REAL,          -- broadband; < 0 means the mono sum cancels
     danceability   REAL,
-    loudness_lufs  REAL
+    loudness_lufs  REAL               -- BS.1770-4 integrated
+);
+
+-- The embedding the tags were derived from, kept so a classifier can be trained
+-- without re-decoding the library. float16: half the size, ample for the range.
+CREATE TABLE IF NOT EXISTS embeddings (
+    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    dim     INTEGER NOT NULL,
+    dtype   TEXT NOT NULL,            -- 'float16'
+    vector  BLOB NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_tags_lookup ON tags(namespace, label, confidence DESC);
 CREATE INDEX IF NOT EXISTS idx_files_path  ON files(path);
+CREATE INDEX IF NOT EXISTS idx_props_kind  ON properties(kind);
 """
 
 
@@ -228,6 +251,12 @@ _MUSIC_TRAINED = ("%genre%", "%style%", "%theme%", "%top50tags%", "mtt",
 
 #: Trained on single notes or general audio events, so they stay trustworthy on a
 #: one-shot: `audio_event` (AudioSet) and the four `nsynth_*` heads.
+
+
+def _note_name(midi: int) -> str:
+    """MIDI number -> Ableton's spelling, where 60 is C3 rather than C4."""
+    names = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+    return f"{names[int(midi) % 12]}{int(midi) // 12 - 2}"
 
 
 def _music_trained_sql(column: str = "t.namespace") -> str:
@@ -369,6 +398,8 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
         for w in words:
             extra_params.extend([f"%{w}%", float(min_confidence), *guard_params])
     sql = (f"SELECT f.id, f.path, f.duration_sec, p.bpm, p.key, p.scale, "  # noqa: S608
+           f"p.kind, p.pitch_midi, p.pitch_hz, p.attack_ms, p.decay_ms, "
+           f"p.stereo_width, p.stereo_correlation, p.loudness_lufs, "
            f"({relevance}) AS relevance{extra_cols} "
            f"FROM files f LEFT JOIN properties p ON p.file_id = f.id "
            f"WHERE {' AND '.join(wheres)} ORDER BY {order} LIMIT ?")
@@ -421,6 +452,17 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
                         if row["key"] else None),
                 "tags": [dict(t) for t in tags],
             }
+            # Measured facts, when the sidecar recorded them. Omitted rather than sent
+            # as nulls: which of these EXIST is itself information — a pitch means the
+            # file was heard as one hit, a BPM means it was heard as a bar of them.
+            measured = {k: row[k] for k in
+                        ("kind", "pitch_midi", "pitch_hz", "attack_ms", "decay_ms",
+                         "stereo_width", "stereo_correlation", "loudness_lufs")
+                        if row[k] is not None}
+            if measured.get("pitch_midi") is not None:
+                measured["note"] = _note_name(measured["pitch_midi"])
+            if measured:
+                entry["measured"] = measured
             if query:
                 # "heard" means a tag carried the word; "name" means only the path did.
                 entry["matched_by"] = "+".join(
