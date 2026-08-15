@@ -125,6 +125,68 @@ def test_find_by_genre_and_filename_together():
         assert sidecar.find(genre="tech house", query="pad")["matches"] == 0
 
 
+def test_query_searches_what_was_heard_not_only_the_filename():
+    """`query` is the parameter a caller reaches for first, and the tool promises to
+    search BY MEANING. It used to be a bare filename LIKE, so a search for a sound the
+    models had correctly identified returned nothing unless the name happened to agree.
+    The pad is named `melancholy_pad.wav` and tagged `melancholic` — one word, two
+    spellings, and only the tag is the actual verdict."""
+    with db():
+        heard = sidecar.find(query="melancholic")
+        assert heard["matches"] == 1
+        assert heard["results"][0]["path"] == PAD
+        # And it says WHICH half matched, so a filename hit is never read as a verdict.
+        assert heard["results"][0]["matched_by"] == "heard"
+        assert sidecar.find(query="melancholy")["results"][0]["matched_by"] == "name"
+
+
+def test_query_ranks_by_how_much_of_it_a_file_matches():
+    """Scores are averaged over the words, so they are comparable only WITHIN one
+    query — which is all ranking needs. There, matching more of the query wins even
+    when the individual verdicts are weaker: the kick answers `bass` and `drum` at
+    0.62, the pad answers only `melancholic`, at a far more confident 0.88."""
+    with db():
+        ranked = sidecar.find(query="bass drum melancholic")["results"]
+        assert [r["path"] for r in ranked] == [KICK, PAD]
+        assert ranked[0]["relevance"] > ranked[1]["relevance"]
+
+
+def test_query_counts_the_name_as_evidence_too():
+    """A library is named by content, so `Snares/Snare 08.wav` really is evidence —
+    just not the only kind. Both halves score, and _NAME_WEIGHT sits mid-scale so a
+    confident verdict outranks a filename while a weak one does not."""
+    with db():
+        heard_only = sidecar.find(query="ambient")["results"][0]
+        assert heard_only["matched_by"] == "heard"
+        assert heard_only["relevance"] == 0.74          # the tag's own confidence
+        name_only = sidecar.find(query="melancholy")["results"][0]
+        assert name_only["matched_by"] == "name"
+        assert name_only["relevance"] == sidecar._NAME_WEIGHT
+
+
+def test_query_matches_word_by_word_not_as_a_phrase():
+    """"a melancholic pad" is what someone actually types, and no single label reads
+    that way. Matching the phrase would find the file by name only and let the
+    listening contribute nothing to a search that named the verdict outright."""
+    with db():
+        assert sidecar.find(query="a melancholic pad")["matches"] == 1
+        assert sidecar.find(query="a melancholic pad")["results"][0]["path"] == PAD
+
+
+def test_query_still_honours_the_one_shot_guard():
+    """A music-trained verdict on a 0.9 s one-shot is wrong evidence, not weak
+    evidence. Reaching those tags through `query` would reintroduce by the back door
+    exactly what the named criteria refuse."""
+    with db():
+        # The kick sits in a folder called `Tech House`, so the file is still FOUND —
+        # by name. What must not happen is the suppressed genre tag answering as well.
+        assert sidecar.find(query="tech house")["results"][0]["matched_by"] == "name"
+        assert sidecar.find(query="tech house",
+                            include_unreliable=True)["results"][0]["matched_by"] == "heard+name"
+        # An event verdict on the same one-shot stays trustworthy and must be reachable.
+        assert sidecar.find(query="Bass drum")["results"][0]["matched_by"] == "heard"
+
+
 def test_one_shot_suppresses_music_trained_verdicts():
     """A head trained on full tracks does not degrade quietly on a 0.9 s sample — it
     answers from its training priors. Those answers must not match a search."""
