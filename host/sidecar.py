@@ -189,6 +189,22 @@ _NS_PATTERNS = {
     "instrument": ("%instrument%", "%timbre%", "%voice%"),
 }
 
+#: AudioSet is an ONTOLOGY, and these are its interior nodes. They are true of almost
+#: any musical sample and identify nothing: "a snare is Music" restates the question.
+#: Measured over 1,647 drum-named files in a real index, `Music` outranked the specific
+#: answer on 81% of them and was the top label on 70%.
+#:
+#: Demoting them — not deleting them — took hit@1 from 37% to 57% across 6,734 files:
+#: cymbal 0.6% -> 51%, snare 5.5% -> 68%, hi-hat 2.9% -> 45%. About ten times what
+#: correcting the mel-spectrogram was worth, for a sort order.
+_GENERIC_EVENTS = (
+    "Music", "Musical instrument", "Sound effect", "Silence", "Speech",
+    "Inside, small room", "Inside, large room or hall", "Outside, urban or manmade",
+    "Outside, rural or natural", "Electronic music", "Cacophony", "Noise",
+    "Environmental noise", "Sound reproduction", "Background music",
+    "Soundtrack music",
+)
+
 #: Below this, a file is a ONE-SHOT rather than music. Not an arbitrary round number:
 #: the EffNet patch is 128 frames at a 256-sample hop and 16 kHz = 2.048 s, so a
 #: shorter file has to be padded or tiled to fill a window. The music-trained heads
@@ -309,11 +325,17 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
             short = (not include_unreliable and row["duration_sec"] is not None
                      and row["duration_sec"] < ONE_SHOT_SECONDS)
             hide = f" AND NOT {_music_trained_sql('namespace')}" if short else ""
+            # Within a namespace, an ontology parent is ranked BELOW anything
+            # specific, however confident it is. Otherwise `Music 0.89` wins the
+            # audio_event slot and `Drum machine 0.15` — the actual answer — is never
+            # shown. Demoted rather than dropped: still returned if nothing else is.
+            generic_sql = ", ".join("?" for _ in _GENERIC_EVENTS)
             tags = conn.execute(
                 "SELECT namespace, label, confidence FROM ("   # noqa: S608
                 "  SELECT namespace, label, ROUND(confidence, 3) AS confidence,"
                 "         ROW_NUMBER() OVER (PARTITION BY namespace"
-                "                            ORDER BY confidence DESC) AS rank"
+                f"                            ORDER BY (label IN ({generic_sql})),"
+                "                                     confidence DESC) AS rank"
                 f"  FROM tags WHERE file_id = ? AND confidence >= ?{hide}"
                 ") WHERE rank = 1 "
                 "ORDER BY CASE"
@@ -322,7 +344,7 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
                 "  WHEN namespace LIKE '%genre%' OR namespace LIKE '%style%' THEN 2"
                 "  WHEN namespace LIKE '%mood%' OR namespace LIKE '%theme%' THEN 3"
                 "  ELSE 4 END, confidence DESC LIMIT 8",
-                (row["id"], float(min_confidence),
+                (*_GENERIC_EVENTS, row["id"], float(min_confidence),
                  *(_MUSIC_TRAINED if short else ()))).fetchall()
             entry = {
                 "path": row["path"],
