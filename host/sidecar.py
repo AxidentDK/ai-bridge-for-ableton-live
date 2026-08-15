@@ -106,6 +106,29 @@ def resolve_db_path(db_path: str | None = None) -> Path | None:
     return None
 
 
+def preset_for(path: str) -> str | None:
+    """The loadable preset a plugin PREVIEW demonstrates, or None.
+
+    Nearly half a real index turned out to be NKS preview audio rather than samples —
+    short demos a plugin ships so its browser can audition presets without loading
+    them. That is not noise: it means the presets themselves become searchable by
+    sound. But a caller wants the preset, not the demo, and the two are not in the
+    same folder:
+
+        preview  .../presets/.previews/Abyss.nksf.ogg
+        preset   .../presets/Abyss.nksf
+
+    Derived rather than stored, so it works on everything already indexed without a
+    re-scan or a schema change.
+    """
+    lower = path.lower()
+    if not lower.endswith(".ogg") or f"{os.sep}.previews{os.sep}" not in lower:
+        return None
+    previews_dir, filename = os.path.split(path)
+    candidate = os.path.join(os.path.dirname(previews_dir), filename[:-4])
+    return candidate if os.path.exists(candidate) else None
+
+
 def _connect(path: Path) -> sqlite3.Connection:
     """Read-only, always. The bridge is a consumer here and must never write."""
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
@@ -243,14 +266,20 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
                 "  WHEN namespace LIKE '%mood%' OR namespace LIKE '%theme%' THEN 3"
                 "  ELSE 4 END, confidence DESC LIMIT 8",
                 (row["id"], float(min_confidence))).fetchall()
-            out.append({
+            entry = {
                 "path": row["path"],
                 "duration_sec": row["duration_sec"],
                 "bpm": row["bpm"],
                 "key": (f"{row['key']} {row['scale']}".strip()
                         if row["key"] else None),
                 "tags": [dict(t) for t in tags],
-            })
+            }
+            preset = preset_for(row["path"])
+            if preset:
+                # The match is preview audio; this is the thing worth loading.
+                entry["preset"] = preset
+                entry["is_preview"] = True
+            out.append(entry)
 
     return {"source": "sidecar", "database": info["database"],
             "searched": info["files_analyzed"], "matches": len(out), "results": out}
