@@ -1,9 +1,21 @@
 """The listening sidecar's database — READ side, and the authoritative schema.
 
-A separate process (Essentia under WSL2 — it publishes no Windows wheels) listens to
-the sample library and writes what it heard into SQLite. The bridge never imports
-Essentia, never loads a model and never writes here: it *reads a file*, which is the
-only way a near-zero-dependency bridge can benefit from a heavyweight model.
+A separate process listens to the sample library and writes what it heard into SQLite.
+The bridge never imports it, never loads a model and never writes here: it *reads a
+file*, which is the only way a near-zero-dependency bridge can benefit from a
+heavyweight one.
+
+That sidecar runs on WINDOWS, in plain Python, on numpy and onnxruntime — about 20 MB,
+no TensorFlow, no Essentia, no GPU. This paragraph used to say it ran "Essentia under
+WSL2", which was true of a design that was never shipped, and the comment outlived it.
+WSL exists in this project for exactly one purpose: an offline bench where Essentia
+could be installed to verify our mel spectrograms against it. Nothing at runtime goes
+near it.
+
+Worth recording why that matters beyond tidiness: a reviewer reading this file took
+the stale sentence as current architecture and designed advice around two Python
+environments that do not exist. A comment that lies is not a documentation problem, it
+is a correctness problem with a slow fuse.
 
 The rule this module exists to enforce:
 
@@ -53,10 +65,12 @@ CREATE TABLE IF NOT EXISTS meta (
 CREATE TABLE IF NOT EXISTS files (
     id            INTEGER PRIMARY KEY,
     -- WINDOWS path, exactly as the bridge and Live see it (D:\\Packs\\kick.wav).
-    -- The sidecar runs under WSL and sees /mnt/d/Packs/kick.wav; translating is the
-    -- SIDECAR's job, because it is the only side that knows both spellings.
+    -- The producer writes this spelling; it is the join key between the two programs,
+    -- so whoever writes the index owns any translation into it. (This said the
+    -- sidecar "runs under WSL and sees /mnt/d/..." — it does not, and never has in
+    -- the shipped design. See the module docstring.)
     path          TEXT NOT NULL UNIQUE,
-    source_path   TEXT,               -- the /mnt/... spelling, kept for provenance
+    source_path   TEXT,               -- the path as the PRODUCER saw it, for provenance
     size_bytes    INTEGER,
     mtime         REAL,               -- with size_bytes: skip unchanged files on re-run
     duration_sec  REAL,
