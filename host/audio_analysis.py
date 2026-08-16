@@ -132,7 +132,13 @@ def band_energies(samples, sample_rate, bands=DEFAULT_BANDS) -> dict[str, float]
     result = {}
     for lo, hi, name in bands:
         sel = (freqs >= lo) & (freqs < hi)
-        energy = float(spectrum[sel].sum()) if sel.any() else 0.0
+        # MEAN per bin, not the sum — as the docstring always claimed. A summed band
+        # is proportional to how many FFT bins happen to fall in it, and the bands are
+        # octave-ish, so bin count roughly doubles each step up. White noise, which is
+        # flat by construction, read as a 20.3 dB high-shelf tilt that was purely bin
+        # count. Anyone reading these to judge whether a mix is bass-heavy was being
+        # told the opposite of the truth.
+        energy = float(spectrum[sel].mean()) if sel.any() else 0.0
         result[name] = round(10 * float(np.log10(energy + 1e-12)), 1)
     return result
 
