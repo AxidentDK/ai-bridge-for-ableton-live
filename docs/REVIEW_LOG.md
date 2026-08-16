@@ -23,6 +23,39 @@ its connection. The cost is that Kim can no longer read the exchange as it happe
 **Design-level questions should go back to the browser chat**, where he can follow them;
 the API is for bulk file review.
 
+## Session 3 — 2026-08-16: drums.py
+
+**Gemini was right:** the `MAX_ONE_SHOT_SECONDS = 3.0` cap was deleting the cymbals —
+it excluded **63.8% of everything named ride** and 47.7% of crashes, against 2–7% of
+kicks, snares and hats, because a crash rings 5–8 s and a ride longer. He named the
+class the constant was destroying without seeing a measurement. He also predicted the
+cap could not be raised alone without the loop filter, and the 2×2 confirmed it exactly
+(15 s no filter 80.1%, 15 s with filter 81.1%).
+
+**Right but small:** the `training_set` leak he found — it filtered on duration while
+`apply_to_index` filtered on `kind`. Real inconsistency, 1.4% of the training set.
+Fixed for structural reasons, not for score.
+
+**Refuted:** his strongest hypothesis, that a style-trained embedding is blind to the
+envelope distinctions separating shaker from hat and rim from snare, and that appending
+the scan's stored scalars would recover them. Tested with seven scalars: **+0.4 points
+overall (inside noise), shaker 35→34, rim 44→45.** The two classes his reasoning
+predicted it would rescue are the two it does not move. His diagnosis may still be
+right; these scalars are not the cure. Two of the four features he named don't exist —
+`flatness` is dropped before storage and `centroid` is bridge-only.
+
+**Not a clean win, and recorded as such:** ride 77±10 → 81±3 and tom 82±4 → 87±3, but
+**crash 80±5 → 74±4**, and overall is a wash. Gemini's explanation for the crash
+regression is the best available: chopping tails at 3 s had trained the model that both
+classes decay fast, and a real ride *wash* and a real crash *sustain* are acoustically
+near-identical, so opening the cap forces discrimination onto the 50 ms attack — which
+is exactly what EffNet is worst at.
+
+**Method note:** this session ran everything over **five seeds**, after the single-seed
+figures proved misleading (ride read 60% → 84% on one split, 77±10 → 81±3 over five).
+Thin classes swing ~10 points between splits; single-seed per-class numbers in this
+project should not be trusted.
+
 ## Session 2 — 2026-08-16 afternoon: shared_dsp.py, reviewed conversationally
 
 The first session was one-shot: send a module, get an answer. This one was a
