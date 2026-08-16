@@ -23,6 +23,13 @@ NOTE_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 _MAJOR = (6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88)
 _MINOR = (6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17)
 
+#: How peaked a pitch-class histogram must be before a key is claimed, as
+#: (max - min) / max. White noise measures about 0.07 through a corrected chroma; a
+#: single held note approaches 1.0. Set low deliberately — the job is to refuse the
+#: hopeless cases, not to second-guess genuinely weak tonality, which `ambiguous` and
+#: the margin already report.
+_MIN_TONAL_CONTRAST = 0.25
+
 _MAJOR_SCALE = (0, 2, 4, 5, 7, 9, 11)
 _MINOR_SCALE = (0, 2, 3, 5, 7, 8, 10)
 
@@ -64,6 +71,20 @@ def key_from_histogram(hist: list[float]) -> dict:
     """
     if not hist or not any(hist):
         return {"key": None}
+    # IS THERE ENOUGH CONTRAST TO ANSWER AT ALL? Krumhansl-Schmuckler correlates a
+    # histogram against 24 profiles and always returns a winner, even when the
+    # histogram carries no tonal information — so white noise, whose chroma is flat to
+    # within 7%, came back as a confident D minor with a 0.229 margin and
+    # `ambiguous: False`. Correlation is scale-invariant, which is a virtue everywhere
+    # except here: it cannot tell a flat histogram from a peaked one.
+    #
+    # A tonal signal concentrates energy in a few classes. Below this the answer is
+    # arithmetic rather than music, and the honest reply is no key.
+    peak = max(hist)
+    if peak > 0 and (peak - min(hist)) / peak < _MIN_TONAL_CONTRAST:
+        return {"key": None, "ambiguous": True,
+                "note": "no key: the pitch-class distribution is too flat to carry "
+                        "one (noise, percussion, or an atonal texture)"}
     scored = []
     for root in range(12):
         rotated = list(hist[root:]) + list(hist[:root])

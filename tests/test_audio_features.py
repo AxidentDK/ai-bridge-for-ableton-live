@@ -142,6 +142,54 @@ def test_integrated_loudness_matches_the_standards_anchor():
     assert abs(got - (-20.0)) < 0.3, got
 
 
+def test_white_noise_gets_no_key():
+    """Krumhansl-Schmuckler always returns a winner, and correlation is scale
+    invariant — so it cannot tell a flat histogram from a peaked one. White noise came
+    back as a confident D minor with a 0.229 margin and ambiguous=False, and a noise
+    riser was therefore searchable by key."""
+    from describe import key_from_histogram
+    noise = np.random.RandomState(5).randn(2 * RATE) * 0.3
+    chroma = audio_features._chroma(np, noise, RATE)
+    assert key_from_histogram(chroma).get("key") is None
+
+
+def test_a_bass_note_is_resolved_at_all():
+    """At 2048 samples the whole octave from A1 to A2 holds THREE bins, so twelve
+    pitch classes could not be separated and the bottom octave of a bass line was
+    invisible. Only a longer window buys real resolution — zero-padding interpolates
+    the same smeared peak."""
+    t = np.arange(2 * RATE) / RATE
+    c2 = np.sin(2 * np.pi * (440 * 2 ** ((36 - 69) / 12)) * t)      # C2, 65.4 Hz
+    chroma = np.array(audio_features._chroma(np, c2, RATE))
+    assert int(np.argmax(chroma)) == 0, f"C2 should peak on C: {chroma.round(2)}"
+    assert chroma[0] > 3 * np.median(chroma)
+
+
+def test_band_energy_does_not_depend_on_capture_length():
+    """Without dividing by the frame length, magnitude scales with how many samples
+    went in — the same noise measured 28.1 dB at 1 s and 37.3 dB at 8 s."""
+    noise = np.random.RandomState(1).randn(RATE * 8) * 0.2
+    got = []
+    for secs in (1, 8):
+        seg = noise[:RATE * secs]
+        got.append(audio_analysis.band_energies(np.stack([seg, seg], axis=1), RATE)["mid"])
+    assert abs(got[0] - got[1]) < 1.0, got
+
+
+def test_a_transient_at_the_start_is_not_windowed_away():
+    """One Hann window across the WHOLE file is zero at its edges, so a one-shot — whose
+    content is by definition at the start — was multiplied away. Measured 66 dB between
+    the same click at t=0 and at t=2 s."""
+    rs = np.random.RandomState(2)
+    at_start = np.zeros(RATE * 4)
+    at_start[:2000] = rs.randn(2000) * 0.8
+    later = np.zeros(RATE * 4)
+    later[RATE * 2:RATE * 2 + 2000] = at_start[:2000]
+    a = audio_analysis.band_energies(np.stack([at_start, at_start], axis=1), RATE)["mid"]
+    b = audio_analysis.band_energies(np.stack([later, later], axis=1), RATE)["mid"]
+    assert abs(a - b) < 3.0, f"identical transient measured {a} vs {b} dB"
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
