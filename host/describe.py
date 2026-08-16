@@ -16,12 +16,10 @@ from __future__ import annotations
 
 NOTE_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 
-# Krumhansl-Schmuckler key profiles: how strongly each scale degree is weighted in
-# a tonal piece. Correlating a duration-weighted pitch-class histogram against all
-# 24 rotations is the standard, and it beats naive "count the accidentals" because
-# it uses EMPHASIS — a passing F# doesn't outvote a tonic held for four bars.
-_MAJOR = (6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88)
-_MINOR = (6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17)
+# The Krumhansl-Schmuckler profiles and the correlation that scores against them used
+# to be duplicated here. They now live once, in `shared_dsp`, so the MIDI tier and the
+# audio tier cannot come to mean different things by "F minor" — which is exactly what
+# happened three times to the measurement code before it was shared.
 
 #: How peaked a pitch-class histogram must be before a key is claimed, as
 #: (max - min) / max. White noise measures about 0.07 through a corrected chroma; a
@@ -52,16 +50,6 @@ def note_name(pitch: int) -> str:
     return f"{NOTE_NAMES[int(pitch) % 12]}{int(pitch) // 12 - 2}"
 
 
-def _correlate(hist: list[float], profile: tuple) -> float:
-    n = len(profile)
-    mh = sum(hist) / n
-    mp = sum(profile) / n
-    num = sum((hist[i] - mh) * (profile[i] - mp) for i in range(n))
-    den = (sum((hist[i] - mh) ** 2 for i in range(n)) ** 0.5
-           * sum((profile[i] - mp) ** 2 for i in range(n)) ** 0.5)
-    return num / den if den else 0.0
-
-
 def key_from_histogram(hist: list[float]) -> dict:
     """Best-fitting key for any 12-bin pitch-class histogram.
 
@@ -80,17 +68,17 @@ def key_from_histogram(hist: list[float]) -> dict:
     #
     # A tonal signal concentrates energy in a few classes. Below this the answer is
     # arithmetic rather than music, and the honest reply is no key.
-    peak = max(hist)
-    if peak > 0 and (peak - min(hist)) / peak < _MIN_TONAL_CONTRAST:
+    # The SCORING is shared with the listener, and imported LAZILY on purpose: this
+    # module is pure stdlib so that `api.py` can describe MIDI on a machine with no
+    # numpy, and a top-level import would take that away. `shared_dsp`'s key functions
+    # are pure Python and its numpy import is soft, so this works there too.
+    from shared_dsp import key_scores, tonal_contrast
+
+    if tonal_contrast(hist) < _MIN_TONAL_CONTRAST:
         return {"key": None, "ambiguous": True,
                 "note": "no key: the pitch-class distribution is too flat to carry "
                         "one (noise, percussion, or an atonal texture)"}
-    scored = []
-    for root in range(12):
-        rotated = list(hist[root:]) + list(hist[:root])
-        scored.append((_correlate(rotated, _MAJOR), root, "major"))
-        scored.append((_correlate(rotated, _MINOR), root, "minor"))
-    scored.sort(reverse=True)
+    scored = key_scores(hist)
     score, root, mode = scored[0]
     runner = scored[1]
     scale = _MAJOR_SCALE if mode == "major" else _MINOR_SCALE

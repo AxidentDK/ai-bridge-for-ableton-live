@@ -15,6 +15,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "host"))
 
 import audio_analysis  # noqa: E402
+import shared_dsp  # noqa: E402
 import audio_features  # noqa: E402
 
 RATE = 44100
@@ -149,7 +150,7 @@ def test_white_noise_gets_no_key():
     riser was therefore searchable by key."""
     from describe import key_from_histogram
     noise = np.random.RandomState(5).randn(2 * RATE) * 0.3
-    chroma = audio_features._chroma(np, noise, RATE)
+    chroma = shared_dsp.chroma_of(shared_dsp.prepare(noise, RATE).mono)
     assert key_from_histogram(chroma).get("key") is None
 
 
@@ -160,7 +161,7 @@ def test_a_bass_note_is_resolved_at_all():
     the same smeared peak."""
     t = np.arange(2 * RATE) / RATE
     c2 = np.sin(2 * np.pi * (440 * 2 ** ((36 - 69) / 12)) * t)      # C2, 65.4 Hz
-    chroma = np.array(audio_features._chroma(np, c2, RATE))
+    chroma = np.array(shared_dsp.chroma_of(shared_dsp.prepare(c2, RATE).mono))
     assert int(np.argmax(chroma)) == 0, f"C2 should peak on C: {chroma.round(2)}"
     assert chroma[0] > 3 * np.median(chroma)
 

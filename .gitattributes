@@ -1,0 +1,13 @@
+# shared_dsp.py is duplicated between this repo and the bridge, and the copy is
+# verified by SHA-256 of the WHOLE FILE (tests/test_shared_dsp_sync.py). Git's
+# core.autocrlf is `true` on the machine this was written on, which rewrites every
+# line ending on checkout — so a fresh clone would hash differently from the repo it
+# was cloned from, and the divergence check would go red for a reason that has nothing
+# whatsoever to do with the DSP. Pinning these files to LF is what makes "byte for
+# byte" mean the same thing in both checkouts.
+#
+# Both layouts are listed so this file can be copied to the bridge unchanged: the
+# listener owns listener/shared_dsp.py, the bridge carries host/shared_dsp.py.
+listener/shared_dsp.py         text eol=lf
+host/shared_dsp.py             text eol=lf
+tests/test_shared_dsp_sync.py  text eol=lf
