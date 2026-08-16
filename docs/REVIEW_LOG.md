@@ -9,9 +9,14 @@ Gemini step is worth paying for.
 
 ## How the review actually runs
 
-1. **Gemini reviews the file.** `tools/ask_gemini.py` sends whole modules over the API.
+1. **Gemini reviews the file.** `tools/ask_gemini.py` sends whole modules over the API
+   for a one-shot answer; `tools/gemini_chat.py` holds a CONVERSATION, which is what
+   sessions 2 and 3 used and which changed the character of the review — each side can
+   challenge the other's reasoning and be shown data in reply, rather than trading
+   monologues. Both share `tools/gemini_client.py`, so there is one transport, not two.
    Every reply is saved verbatim to `gemini_reviews/` (gitignored — the replies quote
-   source). Nothing below is paraphrased from memory; the files are on disk.
+   source), and the chat log is flushed after EVERY exchange, so it survives a crash.
+   Nothing below is paraphrased from memory; the files are on disk.
 2. **Every claim is verified against the code before it is believed**, with a script
    that proves or disproves it where possible. This step is not ceremony — see the
    rejected column.
@@ -19,9 +24,14 @@ Gemini step is worth paying for.
 
 The review moved from the browser to the API for one reason: 9,200 lines is ~100 pasted
 chunks, and roughly a third of browser messages vanished silently when the page dropped
-its connection. The cost is that Kim can no longer read the exchange as it happens.
-**Design-level questions should go back to the browser chat**, where he can follow them;
-the API is for bulk file review.
+its connection.
+
+That move used to cost visibility — Kim could no longer read the exchange as it
+happened, which is the complaint at the top of this file — and the advice here was to
+take design questions back to the browser for that reason. **That is no longer true and
+the advice is withdrawn.** Every exchange, in both directions, is written to
+`gemini_reviews/` as it happens, so the conversation is readable during and after. There
+is no longer a reason to prefer the browser for anything.
 
 ## Session 3 — 2026-08-16: drums.py
 
@@ -143,7 +153,20 @@ working code:
   so; the proposed replacement curve was asserted with no source.
 * "Folder-name pollution dominates text search" — 0 of the top 20 for five real queries.
 
-## The lesson worth keeping
+## The lesson worth keeping, updated 2026-08-16
+
+**A wrong hypothesis aimed at the right place beats a right one aimed elsewhere.** The
+single most valuable thing to come out of session 2 was a bug neither of us was looking
+for — 27% of brightness labels silently broken that morning — and it surfaced only
+because I was measuring absolute centroids in order to REFUTE a claim of Gemini's. He
+was wrong about cymbal timbre. Being wrong about it is what found it.
+
+The corollary, which is why the rejected column is kept: three of his confident claims
+in these two sessions would have made the code worse if adopted unmeasured, and one of
+them (the `min`→`max` chroma patch) would have turned a narrow bug into a library-wide
+one. Neither "trust it" nor "ignore it" is the right policy. Measure it.
+
+## The original lesson
 
 **A confident review is not evidence.** Gemini was right about things I would not have
 seen, and wrong about things that would have cost real work — in both directions,
