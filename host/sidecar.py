@@ -259,6 +259,25 @@ _MUSIC_TRAINED = ("%genre%", "%style%", "%theme%", "%top50tags%", "mtt",
 #: one-shot: `audio_event` (AudioSet) and the four `nsynth_*` heads.
 
 
+def _is_one_shot(row, include_unreliable: bool = False) -> bool:
+    """Should music-trained verdicts be hidden for this file?
+
+    Short AND not corroborated as a loop. `row` needs `duration_sec`, and `kind` and
+    `bars` when they are available — a mapping without them (an older index, or a
+    query that did not select them) degrades to the duration test alone rather than
+    raising, since absence of evidence is not evidence of a loop.
+    """
+    if include_unreliable:
+        return False
+    keys = row.keys() if hasattr(row, "keys") else row
+    duration = row["duration_sec"] if "duration_sec" in keys else None
+    if duration is None or duration >= ONE_SHOT_SECONDS:
+        return False
+    kind = row["kind"] if "kind" in keys else None
+    bars = row["bars"] if "bars" in keys else None
+    return not (kind == "loop" and bars is not None)
+
+
 def _note_name(midi: int) -> str:
     """MIDI number -> Ableton's spelling, where 60 is C3 rather than C4."""
     names = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
@@ -309,8 +328,23 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
     # WRONG evidence — so such tags must not match a search or contribute to its
     # ranking. The guard rides on the criterion itself rather than filtering results
     # afterwards, otherwise a one-shot could still outrank real music on a bogus score.
+    # DURATION ALONE WAS THE WRONG TEST. A 1-bar loop at 120 BPM lasts 2.0 s, so 26%
+    # of everything the listener classified as a loop (2,153 of 8,226, most of them in
+    # the 1.5-2.048 s band) was having its genre and mood stripped as if it were a
+    # drum hit. One file came back self-contradicting in a single reply:
+    # `one_shot: true` alongside `measured: {kind: loop, bars: 1, bpm: 117.3}`.
+    #
+    # The listener already answers this question properly, by ONSET DENSITY, and the
+    # answer was sitting unused in `properties.kind`. It is trusted here only when a
+    # SECOND, independent signal agrees: `bars` is non-NULL, meaning the file's length
+    # also fits a whole number of bars at the detected tempo. Requiring both matters,
+    # because a false `kind='loop'` on a genuine one-shot would re-admit exactly the
+    # confident nonsense this guard exists to block — a 0.1 s tom really does come
+    # back `Electronic---Techno` at 0.99 and `danceable` at 0.993.
     guard = ("" if include_unreliable else
              " AND (f.duration_sec IS NULL OR f.duration_sec >= ? "
+             "OR EXISTS (SELECT 1 FROM properties gp WHERE gp.file_id = f.id "
+             "           AND gp.kind = 'loop' AND gp.bars IS NOT NULL) "
              f"OR NOT {_music_trained_sql()})")
     guard_params: list = ([] if include_unreliable
                           else [float(ONE_SHOT_SECONDS), *_MUSIC_TRAINED])
@@ -425,8 +459,10 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
             # at 0.3, a genre at 0.4 — never surface. Confidences are only comparable
             # WITHIN a head, so take the best from each namespace instead, most
             # informative namespaces first.
-            short = (not include_unreliable and row["duration_sec"] is not None
-                     and row["duration_sec"] < ONE_SHOT_SECONDS)
+            # Same two-signal test as the WHERE guard above, so the tags a caller SEES
+            # match the tags they were allowed to search — a short file the listener
+            # heard as a whole-bar loop keeps its genre in both places.
+            short = _is_one_shot(row, include_unreliable)
             hide = f" AND NOT {_music_trained_sql('namespace')}" if short else ""
             # Within a namespace, an ontology parent is ranked BELOW anything
             # specific, however confident it is. Otherwise `Music 0.89` wins the
@@ -488,14 +524,24 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
             "searched": info["files_analyzed"], "matches": len(out), "results": out}
 
 
-def describe(path: str, db_path: str | None = None) -> dict:
-    """Everything the listening module recorded about ONE file."""
+def describe(path: str, db_path: str | None = None,
+             include_unreliable: bool = False) -> dict:
+    """Everything the listening module recorded about ONE file.
+
+    Applies the SAME one-shot suppression as ``find``. It previously applied none, so
+    the two disagreed about the same file in the same database: searching correctly
+    hid a 0.1 s tom's `danceable 0.993` and `Electronic---Techno`, while inspecting
+    that tom returned them with no caveat at all. A caller checking why a file did not
+    match a search was shown exactly the verdicts the search had refused to believe.
+    """
     info = status(db_path)
     if not info.get("available"):
         raise LookupError(info.get("reason", "sidecar unavailable"))
     with _connect(Path(info["database"])) as conn:
         row = conn.execute(
-            "SELECT f.*, p.bpm, p.bpm_confidence, p.key, p.scale, p.key_strength, "
+            "SELECT f.*, p.kind, p.bars, p.bpm, p.bpm_confidence, p.key, p.scale, "
+            "p.key_strength, p.pitch_hz, p.pitch_midi, p.pitch_confidence, "
+            "p.attack_ms, p.decay_ms, p.stereo_width, p.stereo_correlation, "
             "p.danceability, p.loudness_lufs FROM files f "
             "LEFT JOIN properties p ON p.file_id = f.id WHERE f.path = ?",
             (path,)).fetchone()
@@ -503,11 +549,20 @@ def describe(path: str, db_path: str | None = None) -> dict:
             return {"found": False, "path": path,
                     "note": "not in the sidecar index — it may be outside the scanned "
                             "folders, or not analysed yet"}
+        short = _is_one_shot(row, include_unreliable)
+        hide = f" AND NOT {_music_trained_sql('namespace')}" if short else ""
         tags = conn.execute(
-            "SELECT namespace, label, ROUND(confidence, 3) AS confidence, model "
-            "FROM tags WHERE file_id = ? ORDER BY namespace, confidence DESC",
-            (row["id"],)).fetchall()
+            "SELECT namespace, label, ROUND(confidence, 3) AS confidence, model "   # noqa: S608
+            f"FROM tags WHERE file_id = ?{hide} ORDER BY namespace, confidence DESC",
+            (row["id"], *(_MUSIC_TRAINED if short else ()))).fetchall()
     result = {k: row[k] for k in row.keys() if k != "id"}
     result["found"] = True
     result["tags"] = [dict(t) for t in tags]
+    if short:
+        result["one_shot"] = True
+        result["note"] = ("shorter than 2.048 s and not corroborated as a loop, so "
+                          "verdicts from heads trained on full music tracks (genre, "
+                          "mood, style, danceability) are HIDDEN — they answer from "
+                          "training priors at this length rather than from the sound. "
+                          "Pass include_unreliable to see them anyway.")
     return result
