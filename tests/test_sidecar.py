@@ -23,6 +23,7 @@ import sidecar  # noqa: E402
 # Invented paths — never a real folder from the machine this was developed on.
 KICK = r"D:\Packs\Tech House\kick_deep.wav"
 PAD = r"C:\Samples\Pads\melancholy_pad.wav"
+LOOP = r"D:\Packs\Tech House\loop_1bar_120.wav"
 
 
 def _build(path, *, schema_version=sidecar.SCHEMA_VERSION):
@@ -52,8 +53,14 @@ def _build(path, *, schema_version=sidecar.SCHEMA_VERSION):
          (1, "instrument", "kick drum", 0.97, "m"),
          # File 2 is 8.4 s — real music, so every head is fair game.
          (2, "mood", "melancholic", 0.88, "m"), (2, "genre", "ambient", 0.74, "m"),
-         (2, "mood", "calm", 0.31, "m")])
+         (2, "mood", "calm", 0.31, "m"),
+         (4, "genre", "tech house", 0.80, "m"),
+         (4, "audio_event", "Drum machine", 0.55, "m")])
     conn.execute("INSERT INTO properties (file_id, bpm, key, scale) VALUES (2, 82.0, 'D', 'minor')")
+    conn.execute("INSERT INTO properties (file_id, kind, onsets, bpm, bars) "
+                 "VALUES (4, 'loop', 8, 120.0, 1)")
+    # The kick is a genuine one-shot as far as the listener is concerned.
+    conn.execute("INSERT INTO properties (file_id, kind, onsets) VALUES (1, 'one_shot', 1)")
     conn.commit()
     conn.close()
 
