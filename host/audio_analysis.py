@@ -100,7 +100,12 @@ def integrated_lufs(samples, sample_rate) -> float:
     weighted = [_k_weight(samples[:, ch], sample_rate) for ch in range(samples.shape[1])]
     block = int(0.4 * sample_rate)
     hop = int(0.1 * sample_rate)
-    count = (len(weighted[0]) - block) // hop
+    # +1: the LAST whole block was being dropped. `(n - block) // hop` counts the gaps
+    # between block starts, not the blocks themselves, so a 3 s file gave 26 blocks
+    # where 27 fit. On material that ends louder than it starts that is a real error —
+    # measured 0.49 LU on a quiet-then-loud test — and it biases toward whatever the
+    # file opens with.
+    count = (len(weighted[0]) - block) // hop + 1
     if count < 1:
         raise RuntimeError("Capture too short for integrated LUFS (needs >= 0.4 s)")
     z = np.array([

@@ -34,8 +34,19 @@ def test_chord_naming():
     }
     for stack, expected in cases.items():
         assert name_chord(list(stack)) == expected, f"{stack} -> {name_chord(list(stack))}"
-    # inversions still name the same chord (root is found, not assumed lowest)
-    assert name_chord([64, 67, 72]) == "C"
+    # An INVERSION is named as one. This previously asserted plain "C", on the theory
+    # that the root is found rather than assumed — but the search ran over the lowest
+    # PITCH CLASS, not the lowest note, which is a different thing and picked the wrong
+    # root whenever they disagreed: an A minor 7 voiced with A in the bass came back as
+    # `C6`, and a G sus4 as `Csus2`. Same notes, different chord, different function.
+    assert name_chord([64, 67, 72]) == "C/E"
+    assert name_chord([59, 62, 67]) == "G/B"
+    # ...and the case that exposed it: the bass note decides the root.
+    assert name_chord([57, 60, 64, 67]) == "Am7"
+    assert name_chord([55, 60, 62]) == "Gsus4"
+    # add9 was unreachable: its key was written (0, 4, 7, 14 % 12) = (0, 4, 7, 2),
+    # which no sorted interval tuple can equal.
+    assert name_chord([60, 64, 67, 74]) == "Cadd9"
     # fewer than three pitches is not a chord
     assert name_chord([60, 64]) is None
 

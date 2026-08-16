@@ -32,7 +32,11 @@ _CHORDS = {
     (0, 5, 7): "sus4", (0, 2, 7): "sus2",
     (0, 4, 7, 11): "maj7", (0, 4, 7, 10): "7", (0, 3, 7, 10): "m7",
     (0, 3, 6, 10): "m7b5", (0, 3, 6, 9): "dim7", (0, 4, 7, 9): "6",
-    (0, 3, 7, 9): "m6", (0, 4, 7, 14 % 12): "add9",
+    # Keys must be SORTED, because the lookup builds `tuple(sorted(...))`. Writing
+    # add9 as (0, 4, 7, 14 % 12) reads naturally — the ninth above the fifth — but
+    # evaluates to (0, 4, 7, 2), which no sorted tuple can ever equal. It was the only
+    # unsorted key here, so add9 could never match and silently returned None.
+    (0, 3, 7, 9): "m6", (0, 2, 4, 7): "add9", (0, 2, 3, 7): "m(add9)",
 }
 
 
@@ -96,14 +100,31 @@ def detect_key(notes: list[dict]) -> dict:
 
 
 def name_chord(pitches: list[int]) -> str | None:
-    """Name a simultaneous stack, trying each member as the root."""
-    pcs = sorted({int(p) % 12 for p in pitches})
+    """Name a simultaneous stack, trying the BASS NOTE as the root first.
+
+    Root position is decided by the lowest sounding note, not the lowest pitch class.
+    Iterating `sorted(pcs)` tried C before A regardless of which was actually at the
+    bottom, so an A minor 7 voiced with A in the bass came back as `C6`, and a G sus4
+    as `Csus2` — the same notes, named as a different chord with a different function.
+    The bass note is right there in the input, so it leads.
+    """
+    if len(pitches) < 3:
+        return None
+    ordered = sorted(int(p) for p in pitches)
+    pcs = sorted({p % 12 for p in ordered})
     if len(pcs) < 3:
         return None
-    for root in pcs:
+    # Bass first, then the rest — so an inversion still gets named if the bass reading
+    # is not a chord we know.
+    bass_pc = ordered[0] % 12
+    for root in [bass_pc] + [pc for pc in pcs if pc != bass_pc]:
         intervals = tuple(sorted((pc - root) % 12 for pc in pcs))
         if intervals in _CHORDS:
-            return f"{NOTE_NAMES[root]}{_CHORDS[intervals]}"
+            name = f"{NOTE_NAMES[root]}{_CHORDS[intervals]}"
+            # An inversion is worth naming as one: "C/E" says more than "C".
+            if root != bass_pc:
+                name = f"{name}/{NOTE_NAMES[bass_pc]}"
+            return name
     return None
 
 

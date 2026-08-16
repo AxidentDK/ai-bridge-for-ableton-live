@@ -21,8 +21,12 @@ class FakeBridge:
         parts = path.split()
         t = self.tracks[int(parts[2])]
         if len(parts) == 3:
+            # `is_foldable` marks a GROUP track. Real Live exposes it on every track,
+            # and cleanup must never propose deleting a group — Live takes the group's
+            # children with it. Defaults False so existing cases stay plain tracks.
             return {"devices": t["devices"], "arrangement_clips": t["arr"],
-                    "clip_slots": [None] * len(t["slots"]), "name": t["name"]}[prop]
+                    "clip_slots": [None] * len(t["slots"]), "name": t["name"],
+                    "is_foldable": t.get("is_foldable", False)}[prop]
         if len(parts) == 5 and parts[3] == "clip_slots":
             return t["slots"][int(parts[4])] if prop == "has_clip" else None
         raise KeyError(path + " " + prop)
@@ -43,6 +47,10 @@ def make():
         {"name": "instrumented", "devices": [{"name": "Operator"}], "arr": [], "slots": [False]},
         {"name": "hasArrClip", "devices": [], "arr": [{"x": 1}], "slots": [False]},
         {"name": "empty2", "devices": [], "arr": [], "slots": [False]},
+        # An empty GROUP track: no devices, no clips — and deleting it in Live takes
+        # its children with it, so "unused" must never include it.
+        {"name": "emptyGroup", "devices": [], "arr": [], "slots": [False],
+         "is_foldable": True},
     ])
 
 
@@ -78,15 +86,18 @@ def test_dry_run_removes_nothing():
     b = make()
     r = Live(b).cleanup_unused_tracks(dry_run=True)
     assert r["count"] == 2 and [t["name"] for t in r["would_remove"]] == ["empty1", "empty2"]
-    assert b.deleted == [] and len(b.tracks) == 5
+    assert b.deleted == [] and len(b.tracks) == 6
 
 
 def test_cleanup_removes_only_empty():
     b = make()
     r = Live(b).cleanup_unused_tracks()
-    assert r["count"] == 2 and r["remaining"] == 3
+    assert r["count"] == 2 and r["remaining"] == 4
     assert set(b.deleted) == {"empty1", "empty2"}
-    assert [t["name"] for t in b.tracks] == ["hasClip", "instrumented", "hasArrClip"]
+    # The empty GROUP survives: it has no devices and no clips, but deleting it in
+    # Live would take its children with it.
+    assert [t["name"] for t in b.tracks] == ["hasClip", "instrumented", "hasArrClip",
+                                             "emptyGroup"]
 
 
 class ParamBridge:
