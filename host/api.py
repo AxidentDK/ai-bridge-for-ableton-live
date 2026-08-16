@@ -674,9 +674,17 @@ class Live:
         out: list[dict] = []
 
         def base(n, **over):
+            # `mute` and `probability` are CARRIED, not dropped. Every transform here
+            # removes the clip's notes and re-adds them, so anything this function
+            # forgets is silently erased from the user's clip. It used to copy only
+            # pitch, start, duration and velocity — so transposing a part reset every
+            # muted note to audible and every probability back to 1.0, which is a
+            # musical edit nobody asked for and nothing reported.
             row = {"pitch": int(n["pitch"]), "start_time": float(n["start_time"]),
                    "duration": float(n["duration"]),
-                   "velocity": float(n.get("velocity", 100))}
+                   "velocity": float(n.get("velocity", 100)),
+                   "mute": bool(n.get("mute", False)),
+                   "probability": float(n.get("probability", 1.0))}
             row.update(over)
             return row
 
@@ -1267,11 +1275,23 @@ class Live:
             devices = self.b.get(f"live_set tracks {track}", "devices") or []
             out["track"] = track
             out["devices"] = [d.get("name") for d in devices]
+            out["verified"] = True
             if len(devices) <= before:
                 out["loaded"] = False
                 out["error"] = (
                     "the browser reported no error but the track's device count did "
                     "not change — the item may not be loadable onto this track type")
+        else:
+            # WITHOUT a track there is nothing to compare, so `loaded` is the browser's
+            # word rather than an observation — and the device landed on whatever track
+            # Live happened to have selected. Saying so matters: the tool description
+            # used to promise verification unconditionally, so a caller omitting
+            # `track` (it is not required) would read `loaded: true` as proof.
+            out["verified"] = False
+            out["note"] = ("no `track` given: loaded onto Live's CURRENTLY SELECTED "
+                           "track, and NOT verified — this is the browser reporting "
+                           "success, not a device count that changed. Pass `track` to "
+                           "choose the destination and have the result checked.")
         return out
 
     # --- plugin (VST/AU) parameters --------------------------------------------------
@@ -1651,14 +1671,28 @@ class Live:
         return True
 
     def unused_tracks(self) -> list[dict]:
-        """Batched: 3 round-trips for the whole set, regardless of size."""
+        """Batched: 3 round-trips for the whole set, regardless of size.
+
+        GROUP TRACKS ARE NEVER CANDIDATES. An empty group has no devices and no clips,
+        so "has neither" called it unused — but deleting a group in Live takes its
+        CHILDREN with it, which is the opposite of conservative. A routing-only
+        utility track is the same shape and is likewise excluded, since something is
+        almost certainly feeding it.
+        """
         n = len(self.b.get("live_set", "tracks"))
-        props = ("name", "devices", "arrangement_clips", "clip_slots")
+        props = ("name", "devices", "arrangement_clips", "clip_slots", "is_foldable")
         vals = self.b.get_many([(f"live_set tracks {i}", p)
                                 for i in range(n) for p in props])
         candidates = []
+        grouped = set()
         for i in range(n):
-            name, devices, arrangement, slots = vals[i * len(props):(i + 1) * len(props)]
+            row = vals[i * len(props):(i + 1) * len(props)]
+            name, devices, arrangement, slots, foldable = row
+            # A track type that does not expose `is_foldable` is treated as NOT a
+            # group: absent evidence must not make a plain track undeletable.
+            if bool(foldable):
+                grouped.add(i)
+                continue
             if not devices and not arrangement:
                 candidates.append({"index": i, "name": name, "slots": len(slots)})
         flags = self.b.get_many([

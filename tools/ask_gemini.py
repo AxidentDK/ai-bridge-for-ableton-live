@@ -28,6 +28,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -79,21 +80,47 @@ handling" advice. The author is a strong programmer; you are here for the ear.
 """
 
 
-def _post(model: str, key: str, prompt: str, timeout: int = 300) -> str:
+#: Transient server-side conditions. 503 is "high demand", 429 is rate limiting; both
+#: mean try again rather than give up, and a review of thirty modules will meet them.
+_RETRY_CODES = (429, 500, 502, 503, 504)
+
+
+def _post(model: str, key: str, prompt: str, timeout: int = 300,
+          attempts: int = 5) -> str:
     url = f"{API_ROOT}/models/{model}:generateContent"
     body = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8")
-    request = urllib.request.Request(
-        url, data=body,
-        headers={"Content-Type": "application/json", "x-goog-api-key": key},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.load(response)
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:600]
-        # The key is never echoed: it travels in a header, so it cannot appear in a
-        # URL that an error message might quote back.
-        raise SystemExit(f"Gemini API HTTP {exc.code}: {detail}") from None
+    payload = None
+    for attempt in range(1, attempts + 1):
+        request = urllib.request.Request(
+            url, data=body,
+            headers={"Content-Type": "application/json", "x-goog-api-key": key},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.load(response)
+            break
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:600]
+            if exc.code in _RETRY_CODES and attempt < attempts:
+                # Exponential backoff. Three requests fired at once all came back 503,
+                # so the fix is to wait AND to stop running reviews in parallel.
+                delay = 2 ** attempt * 5
+                print(f"  HTTP {exc.code}, retrying in {delay}s "
+                      f"(attempt {attempt}/{attempts})", file=sys.stderr)
+                time.sleep(delay)
+                continue
+            # The key is never echoed: it travels in a header, so it cannot appear in a
+            # URL that an error message might quote back.
+            raise SystemExit(f"Gemini API HTTP {exc.code}: {detail}") from None
+        except (urllib.error.URLError, TimeoutError) as exc:
+            if attempt < attempts:
+                delay = 2 ** attempt * 5
+                print(f"  {type(exc).__name__}, retrying in {delay}s", file=sys.stderr)
+                time.sleep(delay)
+                continue
+            raise SystemExit(f"network error after {attempts} attempts: {exc}") from None
+    if payload is None:
+        raise SystemExit("no response")
     candidates = payload.get("candidates") or []
     if not candidates:
         raise SystemExit(f"no candidates returned: {json.dumps(payload)[:400]}")

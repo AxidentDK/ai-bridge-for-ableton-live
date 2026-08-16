@@ -217,12 +217,22 @@ TOOLS = [
      "description": ("Write a SHAPED automation sweep into a clip envelope — linear, "
                      "ease_in/out/in_out, exponential, logarithmic, sine, cosine, s_curve, "
                      "triangle, saw, square, random. Live stores points, so the curve is "
-                     "sampled into `steps` of them (32 over a bar looks continuous)."),
+                     "sampled into `steps` of them (32 over a bar looks continuous). "
+                     "⚠️ `clear_first` DEFAULTS TO TRUE here: each call WIPES that "
+                     "parameter's existing envelope before writing. To build automation "
+                     "from several segments, pass clear_first=false on every call after "
+                     "the first, or only the last one survives. Note the opposite "
+                     "default in live_clip_envelope, which is false. "
+                     "Values are in the parameter's own units — read live_device_parameters "
+                     "for its min/max first rather than assuming 0..1."),
      "inputSchema": _schema({"clip_path": _PATH, "parameter_path": {"type": "string"},
                              "start_value": {"type": "number"}, "end_value": {"type": "number"},
                              "start_time": {"type": "number"}, "length": {"type": "number"},
-                             "curve": {"type": "string"}, "steps": {"type": "integer"},
-                             "clear_first": {"type": "boolean"}},
+                             "curve": {"type": "string"},
+                             "steps": {"type": "integer"},
+                             "clear_first": {"type": "boolean",
+                                             "description": "default TRUE: wipes the "
+                                             "parameter's envelope before writing"}},
                             ["clip_path", "parameter_path", "start_value", "end_value"])},
     {"name": "live_midi_cc",
      "description": ("Send a MIDI CC on a virtual port — reaches plugin parameters the LOM "
