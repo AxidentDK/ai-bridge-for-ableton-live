@@ -86,8 +86,24 @@ def analyze(path: str) -> dict:
     # silent frame has a centroid of 0 and averaging frames equally let dead air drag
     # it down — the same tone read 3162 Hz alone and 814 Hz with three seconds of
     # silence after it.
-    spec = np.abs(np.fft.rfft(_frames(np, np.pad(mono, (_N_FFT // 2, 0))), axis=1))
-    freqs = np.fft.rfftfreq(_N_FFT, 1.0 / shared_dsp.ANALYSIS_SR)
+    #
+    # MEASURED AT THE NATIVE RATE, from `prepared.source` — the same escape hatch
+    # stereo width and BS.1770 loudness use, and for the same reason: the property
+    # itself does not survive the downmix. Brightness lives largely above 8 kHz, and
+    # analysing at 16 kHz does not shift the number so much as delete the band it is
+    # about. It was briefly computed from the 16 kHz mono, and the effect was not
+    # subtle: measured across 500 files, 27% changed brightness label and the
+    # "very bright" category lost 75% of its members, because a crash cymbal that
+    # genuinely sits at 6,833 Hz reads 4,093 Hz once its top octave is gone.
+    #
+    # Two options were weighed and one rejected: refitting the thresholds to the 16 kHz
+    # scale (800/1600/2950) recovers most of the labels, but it leaves the reported
+    # centroid saying 4 kHz for a sound an engineer hears at 10 kHz, and that number
+    # goes into the index for others to build on. A misleading measurement is worse
+    # than a threshold that needs justifying.
+    native = shared_dsp.to_mono(prepared.source)
+    spec = np.abs(np.fft.rfft(_frames(np, np.pad(native, (_N_FFT // 2, 0))), axis=1))
+    freqs = np.fft.rfftfreq(_N_FFT, 1.0 / prepared.sample_rate)
     energy = spec.sum(axis=1) + 1e-12
     per_frame = (spec * freqs[None, :]).sum(axis=1) / energy
     loud_enough = energy > (float(energy.max()) * 1e-3)

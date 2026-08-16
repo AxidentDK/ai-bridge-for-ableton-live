@@ -567,7 +567,28 @@ _MINOR = (6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17
 #: already reports.
 MIN_TONAL_CONTRAST = 0.25
 
-_CHROMA_MIN_HZ, _CHROMA_MAX_HZ = 55.0, 5000.0
+#: The chroma band. The bottom is A0 — the lowest note on a piano — and it used to be
+#: A1, 55 Hz, which silently transposed a whole genre of bass up a perfect fifth.
+#:
+#: A pure square wave has NO even harmonics, and symmetrical clipping (saturation,
+#: overdrive, anything used to make a sub audible on a phone speaker) generates odd
+#: harmonics. So for a square or saturated sub at C1, the fundamental sat below the old
+#: floor and was discarded, the second harmonic at C2 does not exist, and the loudest
+#: thing left in band was the THIRD harmonic — a fifth above the root. Measured on
+#: synthetic square subs at the old floor: C1 read G, D1 read A, F1 read C. Every one a
+#: perfect fifth up, confidently, with no indication anything was missing. That is the
+#: worst possible failure for a key estimator, because a fifth is the interval it is
+#: already most likely to confuse.
+#:
+#: Sawtooth basses were fine throughout (1 error in 15), which is why this hid for so
+#: long — a saw HAS a second harmonic, and an octave is the same pitch class.
+#:
+#: Lowering it is not free: at 27.5 Hz a semitone spans 1.6 Hz against 0.98 Hz bins, so
+#: the bottom octave is coarse. Measured, the trade is one-sided — sub-bass errors fall
+#: from 11/15 to 1/15 on sine and 13/15 to 1/15 on square, and the range from C2 up,
+#: which is most of the library, is completely unaffected: 0 errors in 60 notes at every
+#: floor tested. On 120 real bass/808/sub loops from the index, 2% change key.
+_CHROMA_MIN_HZ, _CHROMA_MAX_HZ = 27.5, 5000.0
 #: Chroma alone uses a LONGER window than the rest of the analysis. At 2048 samples
 #: the bins are 7.8 Hz apart at 16 kHz, so the octave from A1 to A2 holds about seven
 #: of them — twelve pitch classes cannot be separated inside seven bins, and the
@@ -586,9 +607,25 @@ def chroma_of(mono, sr: int = ANALYSIS_SR) -> list:
     bins than a low one — across 55-5000 Hz the count per class ranges 15 to 28, a 46%
     imbalance. Summing therefore measured bin count as much as music, which is how
     white noise came back as a confident D minor.
+
+    THE WINDOW IS FIXED, and short input is zero-padded up to it by ``frames``. It used
+    to shrink to the largest power of two below the signal length, which put a 0.5 s
+    file on a 4096-point window and 3.9 Hz bins. That does not merely blur the answer —
+    at the bottom of the range the semitones are closer together than the bins (A1 to
+    Bb1 is 3.27 Hz), so whole pitch classes get no bin at all while their neighbours
+    collect two semitones' worth.
+
+    The padding is worth being precise about, because the obvious reading of it is
+    wrong. Zero-padding buys NO resolution: a 0.5 s observation cannot separate two
+    tones closer than about 2 Hz however much it is padded, and no amount of grid
+    refinement invents information that was never observed. What it buys is GRID
+    DENSITY, and that is what this function needs — every bin is assigned to a pitch
+    class by rounding its own centre frequency, so a coarse grid mis-assigns energy at
+    the class boundaries even when the underlying peak is perfectly well determined.
+    Resolution separates chords; density places a note. Only the second is at stake
+    here.
     """
-    n_fft = min(_CHROMA_FFT, max(_WIDTH_FFT,
-                                 1 << int(np.floor(np.log2(max(len(mono), _WIDTH_FFT))))))
+    n_fft = _CHROMA_FFT
     frames_ = frames(mono, n_fft, n_fft // 2, _WIDTH_MAX_FRAMES)
     if not len(frames_):
         return [0.0] * 12

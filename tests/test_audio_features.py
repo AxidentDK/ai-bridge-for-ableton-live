@@ -191,6 +191,44 @@ def test_a_transient_at_the_start_is_not_windowed_away():
     assert abs(a - b) < 3.0, f"identical transient measured {a} vs {b} dB"
 
 
+
+def test_brightness_is_measured_at_the_native_rate_not_the_analysis_rate():
+    """Brightness lives largely above 8 kHz, so measuring it on the 16 kHz shared mono
+    does not shift the number — it deletes the band the number is about.
+
+    A 12 kHz tone cannot produce a centroid anywhere near 12 kHz if the signal has been
+    resampled to 16 kHz first: there is no such frequency left to weight. Measured
+    across 500 library files, computing this at 16 kHz relabelled 27% of them and
+    emptied "very bright" of 75% of its members, because a crash that genuinely sits at
+    6,833 Hz reads 4,093 Hz once its top octave is gone.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "high.wav")
+        t = np.arange(RATE) / RATE
+        _write(path, 0.5 * np.sin(2 * np.pi * 12000 * t))
+        result = audio_features.analyze(path)
+    assert result["centroid_hz"] > 10000, (
+        f"centroid {result['centroid_hz']} Hz — a 12 kHz tone cannot read this low "
+        f"unless brightness is being measured on the 16 kHz mono")
+
+
+def test_a_bright_sound_is_still_called_very_bright():
+    """The label, not just the number. The thresholds are calibrated for native-rate
+    centroids and were deliberately left untouched when the measurement moved back, so
+    the two have to keep agreeing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "air.wav")
+        rs = np.random.RandomState(1)
+        noise = rs.randn(RATE)
+        spec = np.fft.rfft(noise)
+        freqs = np.fft.rfftfreq(len(noise), 1.0 / RATE)
+        spec[(freqs < 8000) | (freqs > 16000)] = 0        # nothing but "air"
+        bright = np.fft.irfft(spec, n=len(noise))
+        _write(path, bright / (np.abs(bright).max() or 1.0) * 0.5)
+        described = audio_features.describe(path)
+    assert "very bright" in described["labels"], described["labels"]
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
