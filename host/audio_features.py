@@ -46,6 +46,50 @@ _EPB_SLOW, _EPB_FAST = 2.2, 1.5
 _EPB_WIDTH = 0.9
 
 
+#: Chroma needs a LONGER window than the rest of the analysis. At 2048 samples and
+#: 44.1 kHz the bins are 21.5 Hz apart, so the whole octave from A1 to A2 (55-110 Hz)
+#: contains THREE bins — twelve pitch classes cannot be told apart inside three bins,
+#: and the bottom octave of a bass line is simply invisible to key detection. This is
+#: real resolution, not bin density: zero-padding interpolates the same smeared peak.
+#: 16384 samples is 0.37 s and 2.7 Hz, which resolves down to the bottom of a piano.
+_CHROMA_FFT = 16384
+_CHROMA_LO, _CHROMA_HI = 55.0, 5000.0
+
+
+def _chroma(np, mono, rate: int) -> list:
+    """12 pitch classes, resolved low enough to see a bass note and normalised so no
+    class wins by owning more FFT bins.
+
+    Linear FFT bins are spread evenly in Hz, while pitch classes are spread evenly in
+    LOG frequency — so a high pitch class covers many more bins than a low one. Summing
+    raw bins therefore measured bin count as much as music: across 55-5000 Hz the count
+    per class ranged 15 to 28, a 46% imbalance, which is why WHITE NOISE resolved to a
+    confident D minor. Averaging per class removes it.
+    """
+    n_fft = min(_CHROMA_FFT, max(2048, 1 << int(np.floor(np.log2(max(len(mono), 2048))))))
+    if len(mono) < n_fft:
+        mono = np.pad(mono, (0, n_fft - len(mono)))
+    hop = n_fft // 2
+    starts = np.arange(0, len(mono) - n_fft + 1, hop)
+    if not len(starts):
+        starts = np.array([0])
+    idx = np.arange(n_fft)[None, :] + starts[:, None]
+    frames = mono[idx] * np.hanning(n_fft)[None, :]
+    spec = np.abs(np.fft.rfft(frames, axis=1))
+    freqs = np.fft.rfftfreq(n_fft, 1.0 / rate)
+    usable = (freqs > _CHROMA_LO) & (freqs < _CHROMA_HI)
+    chroma = [0.0] * 12
+    if not usable.any():
+        return chroma
+    pcs = np.round(12 * np.log2(freqs[usable] / 440.0) + 69).astype(int) % 12
+    weights = spec[:, usable].sum(axis=0)
+    for pc in range(12):
+        sel = pcs == pc
+        # MEAN per contributing bin, not the sum.
+        chroma[pc] = float(weights[sel].mean()) if sel.any() else 0.0
+    return chroma
+
+
 def _tempo(np, flux, n_onsets: int, duration: float, rate: int):
     """BPM by autocorrelation of the onset-strength curve, plus (confidence).
 
@@ -119,8 +163,34 @@ def _tempo(np, flux, n_onsets: int, duration: float, rate: int):
     # loop's half-time alias is genuinely strong in the ACF, so measuring the margin
     # there leaves almost every file near zero confidence — honest, but useless. What
     # a caller needs is how sure the system is GIVEN everything it knows.
+    # Scored over a WIDER lag range than the tempo search, purely so the rivals can be
+    # found. The search is bounded to 60-190 BPM, but a winner's half-time rival
+    # routinely falls outside it — at 100 BPM the winner is lag 38 and the rival 76 —
+    # and a missing rival reads as zero, making the margin a perfect 1.0 exactly where
+    # the octave is most ambiguous.
+    #
+    # This bug was FIXED IN THE LISTENER and then reintroduced here when the algorithm
+    # was ported by hand a couple of hours later. Third time tonight the same fault has
+    # appeared in both programs; the two really want one shared implementation.
+    wide_lo, wide_hi = max(2, lo // 3), min(len(acf) - 2, hi * 3)
+    wide_lags = np.arange(wide_lo, wide_hi + 1)
+    wide_bpms = 60.0 * frames_per_sec / wide_lags
+    wide_harmonic = np.zeros(len(wide_lags))
+    for k, weight in ((1, 1.0), (2, 0.5), (3, 0.33), (4, 0.25)):
+        idx = wide_lags * k
+        valid = idx < len(acf)
+        wide_harmonic[valid] += weight * acf[idx[valid]]
+    if n_onsets >= 2:
+        wide_beats = duration * wide_bpms / 60.0
+        wide_epb = n_onsets / np.maximum(wide_beats, 1e-9)
+        wide_frac = ((np.log2(wide_bpms) - np.log2(85.0))
+                     / (np.log2(170.0) - np.log2(85.0)))
+        wide_target = _EPB_SLOW + wide_frac * (_EPB_FAST - _EPB_SLOW)
+        wide_density = np.exp(-0.5 * (np.log2(wide_epb / wide_target) / _EPB_WIDTH) ** 2)
+    else:
+        wide_density = np.ones(len(wide_lags))
     posterior = np.zeros(len(acf))
-    posterior[lags] = band
+    posterior[wide_lags] = wide_harmonic * wide_density
     winner = float(posterior[int(round(lag))]) if int(round(lag)) < len(acf) else 0.0
     rivals = []
     for factor in (0.5, 2.0, 1.0 / 3.0, 3.0, 1.5, 2.0 / 3.0):
@@ -186,13 +256,7 @@ def analyze(path: str) -> dict:
     flatness = float(np.mean(geo / ari))
 
     # Chroma: fold spectral energy onto the 12 pitch classes.
-    chroma = [0.0] * 12
-    usable = (freqs > 55.0) & (freqs < 5000.0)
-    if usable.any():
-        pcs = np.round(12 * np.log2(freqs[usable] / 440.0) + 69).astype(int) % 12
-        weights = spec[:, usable].sum(axis=0)
-        for pc in range(12):
-            chroma[pc] = float(weights[pcs == pc].sum())
+    chroma = _chroma(np, mono, rate)
 
     # Onsets via spectral flux: rises in energy, peak-picked above an adaptive
     # threshold. Rate separates percussive material from sustained.

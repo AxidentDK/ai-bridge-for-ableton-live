@@ -127,8 +127,33 @@ def band_energies(samples, sample_rate, bands=DEFAULT_BANDS) -> dict[str, float]
     """Mean per-band energy in dB (relative), from a Hann-windowed rFFT of the mono mix."""
     np = _numpy()
     mono = samples.mean(axis=1)
-    spectrum = np.abs(np.fft.rfft(mono * np.hanning(len(mono)))) ** 2
-    freqs = np.fft.rfftfreq(len(mono), 1.0 / sample_rate)
+    # FRAMED, not one giant window, and NORMALISED by the frame length.
+    #
+    # Two faults came from the single line this replaces. `np.hanning(len(mono))`
+    # spread one window across the WHOLE file, and a Hann window is zero at its edges —
+    # so a transient at the start was multiplied away. Measured: the same click read
+    # -35.7 dB at t=0 and +30.3 dB at t=2 s, a 66 dB difference for identical audio.
+    # For a one-shot, whose content is by definition at the start, that erased the file.
+    #
+    # And without dividing by the frame length, magnitude scales with how many samples
+    # went in, so the dB figures tracked DURATION: the same noise measured 28.1 dB at
+    # 1 s and 37.3 dB at 8 s, which makes the numbers meaningless to compare between
+    # files.
+    n_fft = 2048
+    hop = 1024
+    if len(mono) < n_fft:
+        mono = np.pad(mono, (0, n_fft - len(mono)))
+    window = np.hanning(n_fft)
+    starts = np.arange(0, len(mono) - n_fft + 1, hop)
+    if not len(starts):
+        starts = np.array([0])
+    idx = np.arange(n_fft)[None, :] + starts[:, None]
+    frames = mono[idx] * window[None, :]
+    # Divide by the window's coherent gain so the level is independent of both the
+    # frame length and the window shape.
+    spectra = np.abs(np.fft.rfft(frames, axis=1)) / (window.sum() / 2.0)
+    spectrum = (spectra ** 2).mean(axis=0)
+    freqs = np.fft.rfftfreq(n_fft, 1.0 / sample_rate)
     result = {}
     for lo, hi, name in bands:
         sel = (freqs >= lo) & (freqs < hi)
