@@ -23,7 +23,45 @@ its connection. The cost is that Kim can no longer read the exchange as it happe
 **Design-level questions should go back to the browser chat**, where he can follow them;
 the API is for bulk file review.
 
-## Attribution — 2026-08-16
+## Session 2 — 2026-08-16 afternoon: shared_dsp.py, reviewed conversationally
+
+The first session was one-shot: send a module, get an answer. This one was a
+conversation over `tools/gemini_chat.py`'s transport, which changed what was possible —
+each of us could challenge the other's reasoning and be shown data in reply. Full
+transcript in `gemini_reviews/20260816-145823-review.md`.
+
+**Gemini was right about, and I was wrong:**
+
+| Claim | Outcome |
+|---|---|
+| Bar-snapping would break on arbitrary audio | Correct, from the architecture alone, before seeing the code — and it was a real bug found hours earlier |
+| Square/saturated subs are transposed up a fifth by the 55 Hz chroma floor | **Correct, and the find of the day.** Named the mechanism from the constant. Verified: C1→G, D1→A, F1→C |
+| Lowering the floor is worth the coarseness | Correct. I argued it would degrade the working range; measured, the range above C2 is untouched — 0/60 errors at every floor |
+| Brightness at native rate is not an exception to rule 1 | Correct. `Prepared.source` exists for exactly this, and its docstring says so |
+
+**I was right about, and Gemini was wrong:**
+
+| Claim | Evidence that settled it |
+|---|---|
+| The 0.15 flux floor strips hi-hats and votes half-time | Refuted on 134 real loops: the floor keeps 95.1% of onsets, and accuracy in the 118–135 BPM band is *identical* at every floor value. Flux is spectral difference, not amplitude — a quiet hat is broadband and survives |
+| 16 kHz flattens cymbal timbre | Refuted on 196 drum one-shots: separation *improves*, 0.583→0.650 within the cymbal family. Above 8 kHz is mostly per-sample noise |
+| His chroma patch (`min`→`max`) | Would have removed the cap, not added a floor: a 30 s loop analysed with a 16-second window. Narrow bug turned into a broad one. He conceded immediately |
+| His thresholds 600/2000/3800 | Scored 72.8% — exactly what changing nothing scores. Read off drums; the library is not drums |
+
+**Found only because a wrong prediction pointed a measurement at the right place:** the
+16 kHz brightness regression. Chasing Gemini's (refuted) timbral claim meant measuring
+absolute centroids, which showed 27% of 500 files had been relabelled that morning and
+"very bright" had lost 75% of its members — my own bug, from that day, invisible in a
+diff because both numbers are plausible.
+
+**Open, and honestly unresolved.** Gemini predicted the real-library key changes would
+spike at a perfect fifth down, which would prove the mechanism outside synthesis. On 400
+real bass loops, 23 changed key, and the spike is at a **major third down (10)**, not a
+fifth (4). Both are odd-harmonic intervals, so the odd-harmonic story survives — the 5th
+harmonic is a major third — but the specific prediction is wrong and n=23 is too small
+to lean on. Worth revisiting.
+
+## Attribution — 2026-08-16 (session 1)
 
 ### Gemini found these
 
