@@ -276,7 +276,17 @@ TOOLS = [
                      "tracks and answer a snare from their training priors rather than "
                      "from the sound. Audio-event and NSynth verdicts are kept, being "
                      "trained on events and single notes. Set include_unreliable to "
-                     "see the suppressed tags anyway."),
+                     "see the suppressed tags anyway. "
+                     "VOCABULARY: the tags come from a fixed set, so plain words work "
+                     "best — mood/theme is dark, energetic, space, relaxing, "
+                     "meditative, film, melodic, soundscape, deep, slow, happy, sad, "
+                     "epic, dream, emotional, retro; timbre is only dark or bright; "
+                     "reverb is wet or dry. Words outside that set are widened to the "
+                     "nearest ones that exist (melancholic to sad, calm to relaxing, "
+                     "vox to voice) and the reply says so in `interpreted` — if it "
+                     "does not appear, the word was matched literally. "
+                     "Use live_sidecar_status to see the vocabulary actually present "
+                     "in this library."),
      "inputSchema": _schema({"query": {"type": "string"}, "genre": {"type": "string"},
                              "mood": {"type": "string"}, "instrument": {"type": "string"},
                              "event": {"type": "string"},

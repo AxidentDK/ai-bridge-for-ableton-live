@@ -272,6 +272,112 @@ def test_unreadable_database_degrades_instead_of_raising():
         assert "unreadable" in info["reason"]
 
 
+
+# =====================================================================================
+# VOCABULARY WIDENING. The two rules below are the whole safety case for _SYNONYMS, and
+# they are checked against the REAL index because that is the only place the actual
+# vocabulary exists. Skipped, not failed, on a machine without one.
+# =====================================================================================
+
+def _real_index():
+    path = os.path.join(os.path.expanduser("~"), ".ai-bridge", "sound_index.db")
+    return path if os.path.exists(path) else None
+
+
+def test_every_synonym_points_at_a_label_that_exists():
+    """A mapping onto a label no head ever produces is a silent no-op wearing a fix.
+
+    It would look right in the source, return nothing extra, and leave the caller with
+    the filename-only search this feature exists to replace.
+    """
+    index = _real_index()
+    if not index:
+        print("        (no index — vocabulary check skipped)")
+        return
+    conn = sqlite3.connect(f"file:{index}?mode=ro", uri=True)
+    try:
+        missing = []
+        for word, targets in sidecar._SYNONYMS.items():
+            for target in targets:
+                n = conn.execute("SELECT COUNT(*) FROM tags WHERE label = ?",
+                                 (target,)).fetchone()[0]
+                if n == 0:
+                    missing.append(f"{word} -> {target}")
+        assert not missing, f"synonyms pointing at labels that do not exist: {missing}"
+    finally:
+        conn.close()
+
+
+def test_no_synonym_shadows_a_word_the_vocabulary_already_has():
+    """The rule that stops this feature doing harm.
+
+    A synonym for a word the vocabulary ALREADY uses would replace a real verdict with
+    a guess. Not hypothetical: `synth` matches 81,561 tags and `ambient` 48,125 in this
+    library, so the obvious `synth -> synthesizer` mapping would have been actively
+    destructive. Only genuinely absent words may be mapped.
+    """
+    index = _real_index()
+    if not index:
+        print("        (no index — shadowing check skipped)")
+        return
+    conn = sqlite3.connect(f"file:{index}?mode=ro", uri=True)
+    try:
+        shadowed = []
+        for word in sidecar._SYNONYMS:
+            n = conn.execute("SELECT COUNT(*) FROM tags WHERE label LIKE ?",
+                             (f"%{word}%",)).fetchone()[0]
+            if n:
+                shadowed.append(f"{word} ({n:,} real tags)")
+        assert not shadowed, (
+            "these words are IN the vocabulary and must not be remapped: "
+            + ", ".join(shadowed))
+    finally:
+        conn.close()
+
+
+def test_a_widened_query_says_so_rather_than_rewriting_silently():
+    """A search that quietly changes the question cannot be debugged, and the caller
+    may have meant the word literally."""
+    with db() as path:
+        conn = sqlite3.connect(path)
+        conn.execute("INSERT INTO tags VALUES (2, 'moodtheme', 'sad', 0.9, 'm')")
+        conn.commit()
+        conn.close()
+        # "wistful" appears in no label and no filename here; only the mapping to
+        # "sad" can find anything at all.
+        r = sidecar.find(query="wistful", db_path=path)
+        assert r["matches"] == 1, r["matches"]
+        assert r["results"][0]["matched_by"] == "heard"
+        assert r["interpreted"] == {"wistful": ["sad"]}, r.get("interpreted")
+        assert "wistful -> sad" in r["note"]
+
+
+def test_widening_applies_to_heard_tags_only_not_to_filenames():
+    """A file called "Melancholic Pad.wav" should match that word, and NOT every file
+    the models heard as sad. Keeping the name half literal is what preserves the
+    distinction `matched_by` reports."""
+    with db() as path:
+        conn = sqlite3.connect(path)
+        conn.execute("INSERT INTO files (id, path, duration_sec) "
+                     r"VALUES (9, 'X:\packs\wistful thing.wav', 8.0)")
+        conn.commit()
+        conn.close()
+        r = sidecar.find(query="wistful", db_path=path)
+        paths = [x["path"] for x in r["results"]]
+        assert r"X:\packs\wistful thing.wav" in paths or any(
+            "wistful" in p.lower() for p in paths), paths
+        # The literal-named file matched by NAME, not because it was heard as sad.
+        named = [x for x in r["results"] if "wistful" in x["path"].lower()]
+        assert named and named[0]["matched_by"] == "name", named
+
+
+def test_an_unmapped_query_reports_no_interpretation():
+    """No `interpreted` key when nothing was widened — the field means something."""
+    with db() as path:
+        r = sidecar.find(query="kick", db_path=path)
+        assert "interpreted" not in r, r.get("interpreted")
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
