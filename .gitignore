@@ -39,6 +39,7 @@ scratch/
 /docs/COMPARISON.md
 /docs/AUDIO_UNDERSTANDING.md
 /docs/SIDECAR.md
+/docs/LIVE_TEST_PLAN.md
 
 # Personal terms for scripts/check_private.py. Kept local ON PURPOSE: a checker that
 # hard-codes your private folder names would publish what it is meant to hide.
