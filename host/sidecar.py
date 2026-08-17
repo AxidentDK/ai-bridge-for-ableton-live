@@ -254,6 +254,51 @@ _GENERIC_EVENTS = (
 #: weak one should not. See the `query` branch of :func:`find` for the full reasoning.
 _NAME_WEIGHT = 0.5
 
+#: WORDS THE VOCABULARY DOES NOT HAVE, mapped to the ones it does.
+#:
+#: The tag vocabulary is fixed by the models: 34 mood/theme classes, 29 instruments,
+#: two-class timbre and reverb heads. A caller does not know that list and should not
+#: have to. Asked for "a melancholic pad", the search matched no tag at all and fell
+#: back to filename grep — returning results, ranked, with nothing to say the audio had
+#: never been consulted. That is this project's recurring failure shape: plausible and
+#: wrong, raising nothing.
+#:
+#: TWO RULES, both enforced by tests rather than by care:
+#:
+#: 1. **Only map words that match NOTHING today.** A synonym for a word already in the
+#:    vocabulary would SHADOW real verdicts with a guess. This is not hypothetical —
+#:    `synth` already matches 81,561 tags and `ambient` 48,125, so the obvious
+#:    `synth -> synthesizer` mapping would have been actively harmful.
+#: 2. **Only map ONTO labels that exist.** A mapping onto a label no head produces is a
+#:    silent no-op that looks like a fix.
+#:
+#: Deliberately NOT mapped, because no honest target exists: `warm` (a mixing term for
+#: low-mid richness; the nearest label is `dark`, which sits on 94% of the library and
+#: would mean nothing), `gritty`, `lush`. Better to return a filename match and say so
+#: than to invent a verdict.
+_SYNONYMS = {
+    # mood — the case that started this
+    "melancholic": ("sad",), "melancholy": ("sad",), "sombre": ("sad",),
+    "somber": ("sad",), "wistful": ("sad",), "mournful": ("sad",),
+    "sorrowful": ("sad",), "moody": ("sad", "dark"),
+    "upbeat": ("happy",), "uplifting": ("happy", "inspiring"),
+    "joyful": ("happy",), "cheerful": ("happy",),
+    "calm": ("relaxing",), "chilled": ("relaxing",), "mellow": ("relaxing",),
+    "peaceful": ("relaxing",), "tranquil": ("relaxing",),
+    "driving": ("energetic",), "punchy": ("energetic",), "powerful": ("energetic",),
+    "intense": ("energetic",),
+    "airy": ("space",), "spacious": ("space",),
+    "cinematic": ("film",), "filmic": ("film",), "trailer": ("film", "epic"),
+    "grand": ("epic",), "massive": ("epic",), "heroic": ("epic",),
+    "nostalgic": ("retro",), "vintage": ("retro",),
+    "dreamy": ("dream",), "hypnotic": ("meditative",), "trippy": ("meditative",),
+    # instruments — abbreviations a producer types
+    "vox": ("voice",), "rhodes": ("electricpiano",), "gtr": ("guitar",),
+    "upright": ("doublebass",), "contrabass": ("doublebass",),
+    # space
+    "reverberant": ("wet",), "roomy": ("wet",), "tight": ("dry",),
+}
+
 #: Below this, a file is a ONE-SHOT rather than music. Not an arbitrary round number:
 #: the EffNet patch is 128 frames at a 256-sample hop and 16 kHz = 2.048 s, so a
 #: shorter file has to be padded or tiled to fill a window. The music-trained heads
@@ -404,14 +449,24 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
         # listening contributes nothing. Words under three characters are dropped as
         # noise ("a", "of"), and if that leaves nothing the whole string is used.
         words = [w for w in re.split(r"[^\w]+", query) if len(w) >= 3] or [query]
+        # Each word is widened to the vocabulary's own terms where it has none of its
+        # own — see _SYNONYMS. Applied to the HEARD half only: a filename search stays
+        # literal, because a file called "Melancholic Pad.wav" should match that word
+        # and not every file heard as sad.
+        terms = [(w, *_SYNONYMS.get(w.lower(), ())) for w in words]
         name_sql = " OR ".join("f.path LIKE ?" for _ in words)
-        heard_one = (f"EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "  # noqa: S608
-                     f"AND t.label LIKE ? AND t.confidence >= ?{guard})")
-        heard_sql = " OR ".join(heard_one for _ in words)
+
+        def _heard_one(n_terms: int) -> str:
+            likes = " OR ".join("t.label LIKE ?" for _ in range(n_terms))
+            return (f"EXISTS (SELECT 1 FROM tags t WHERE t.file_id = f.id "  # noqa: S608
+                    f"AND ({likes}) AND t.confidence >= ?{guard})")
+
+        heard_sql = " OR ".join(_heard_one(len(t)) for t in terms)
         wheres.append(f"(({name_sql}) OR ({heard_sql}))")
         params.extend([f"%{w}%" for w in words])
-        for w in words:
-            params.extend([f"%{w}%", float(min_confidence), *guard_params])
+        for group in terms:
+            params.extend([f"%{t}%" for t in group])
+            params.extend([float(min_confidence), *guard_params])
         # Weights, and why. The heard half contributes the tag's own confidence, so it
         # stays on the same 0-1 scale as every other criterion. The name half is a
         # yes/no fact with no confidence attached, so it needs a constant: _NAME_WEIGHT
@@ -426,16 +481,20 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
         # the average down, so `pad ambient` scores below `ambient` on the same file.
         # Ranking only ever compares files within one query, where the ordering is the
         # wanted one: matching more of the query wins, however the words are weighted.
-        per_word = (
-            f"COALESCE((SELECT MAX(t.confidence) FROM tags t "                # noqa: S608
-            f"WHERE t.file_id = f.id AND t.label LIKE ? "
-            f"AND t.confidence >= ?{guard}), 0) + "
-            f"(CASE WHEN f.path LIKE ? THEN {_NAME_WEIGHT} ELSE 0 END)")
+        def _per_word(n_terms: int) -> str:
+            likes = " OR ".join("t.label LIKE ?" for _ in range(n_terms))
+            return (
+                f"COALESCE((SELECT MAX(t.confidence) FROM tags t "            # noqa: S608
+                f"WHERE t.file_id = f.id AND ({likes}) "
+                f"AND t.confidence >= ?{guard}), 0) + "
+                f"(CASE WHEN f.path LIKE ? THEN {_NAME_WEIGHT} ELSE 0 END)")
+
         score_parts.append(
-            "(" + " + ".join(per_word for _ in words) + f") / {float(len(words))}")
-        for w in words:
-            score_params.extend([f"%{w}%", float(min_confidence), *guard_params,
-                                 f"%{w}%"])
+            "(" + " + ".join(_per_word(len(t)) for t in terms)
+            + f") / {float(len(words))}")
+        for group, w in zip(terms, words):
+            score_params.extend([f"%{t}%" for t in group])
+            score_params.extend([float(min_confidence), *guard_params, f"%{w}%"])
 
     # No criterion carries a confidence (filename-only search) -> nothing to rank by,
     # so fall back to a stable alphabetical order rather than insertion order.
@@ -449,8 +508,9 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
         extra_cols = (f", (CASE WHEN ({name_sql}) THEN 1 ELSE 0 END) AS matched_name"
                       f", (CASE WHEN ({heard_sql}) THEN 1 ELSE 0 END) AS matched_heard")
         extra_params = [f"%{w}%" for w in words]
-        for w in words:
-            extra_params.extend([f"%{w}%", float(min_confidence), *guard_params])
+        for group in terms:
+            extra_params.extend([f"%{t}%" for t in group])
+            extra_params.extend([float(min_confidence), *guard_params])
     sql = (f"SELECT f.id, f.path, f.duration_sec, p.bpm, p.key, p.scale, "  # noqa: S608
            f"p.kind, p.bars, p.pitch_midi, p.pitch_hz, p.attack_ms, p.decay_ms, "
            f"p.stereo_width, p.stereo_correlation, p.loudness_lufs, "
@@ -534,8 +594,21 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
                 entry["is_preview"] = True
             out.append(entry)
 
-    return {"source": "sidecar", "database": info["database"],
-            "searched": info["files_analyzed"], "matches": len(out), "results": out}
+    result = {"source": "sidecar", "database": info["database"],
+              "searched": info["files_analyzed"], "matches": len(out),
+              "results": out}
+    if query:
+        # NEVER SILENT. A search that quietly rewrites the question is a search that
+        # cannot be debugged — and the caller may have meant the word literally.
+        used = {w: list(g[1:]) for w, g in zip(words, terms) if len(g) > 1}
+        if used:
+            result["interpreted"] = used
+            result["note"] = (
+                "Some words are not in the tag vocabulary and were widened to the "
+                "nearest terms that are: "
+                + "; ".join(f"{w} -> {', '.join(v)}" for w, v in used.items())
+                + ". Filenames were still searched for the original words.")
+    return result
 
 
 def describe(path: str, db_path: str | None = None,
