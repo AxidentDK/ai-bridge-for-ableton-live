@@ -9,14 +9,17 @@ Gemini step is worth paying for.
 
 ## How the review actually runs
 
-1. **Gemini reviews the file.** `tools/ask_gemini.py` sends whole modules over the API
-   for a one-shot answer; `tools/gemini_chat.py` holds a CONVERSATION, which is what
-   sessions 2 and 3 used and which changed the character of the review — each side can
-   challenge the other's reasoning and be shown data in reply, rather than trading
-   monologues. Both share `tools/gemini_client.py`, so there is one transport, not two.
-   Every reply is saved verbatim to `gemini_reviews/` (gitignored — the replies quote
-   source), and the chat log is flushed after EVERY exchange, so it survives a crash.
+1. **Gemini reviews the file.** One local tool sends whole modules over the API for a
+   one-shot answer; another holds a CONVERSATION, which is what sessions 2 and 3 used and
+   which changed the character of the review — each side can challenge the other's
+   reasoning and be shown data in reply, rather than trading monologues. Both share one
+   transport, so there is a single place where a request is made. Every reply is saved
+   verbatim, and the chat log is flushed after EVERY exchange, so it survives a crash.
    Nothing below is paraphrased from memory; the files are on disk.
+
+   *(That tooling is deliberately NOT part of this repo: it is how the project is
+   developed, not part of the program you install, and it needs an API key of its own.
+   What it produced is recorded here so the attribution stays checkable.)*
 2. **Every claim is verified against the code before it is believed**, with a script
    that proves or disproves it where possible. This step is not ceremony — see the
    rejected column.
@@ -69,7 +72,7 @@ project should not be trusted.
 ## Session 2 — 2026-08-16 afternoon: shared_dsp.py, reviewed conversationally
 
 The first session was one-shot: send a module, get an answer. This one was a
-conversation over `tools/gemini_chat.py`'s transport, which changed what was possible —
+conversation over the chat tool's transport, which changed what was possible —
 each of us could challenge the other's reasoning and be shown data in reply. Full
 transcript in `gemini_reviews/20260816-145823-review.md`.
 
