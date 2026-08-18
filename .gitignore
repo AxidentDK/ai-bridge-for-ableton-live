@@ -69,9 +69,14 @@ gemini_reviews/
 # A second model driving the bridge is how WE develop and test it; it is not part of
 # the program a user installs, and it needs an API key nobody else has. Same reasoning
 # as the agent-instruction files above.
-# ⚠️ tools/ask_gemini.py, tools/gemini_chat.py, tools/gemini_client.py and
-# tests/test_gemini_client.py were tracked BEFORE this rule and are already public.
-# Removing them from HEAD is a separate decision — see the note in docs/GEMINI_TOOLS.md.
+#
+# The first four were tracked before this rule and were removed from HEAD on 2026-08-19.
+# ⚠️ That does NOT erase them from history — they remain in earlier commits, and taking
+# them out of history would need a force-push, which rewrites published history.
+/tools/ask_gemini.py
+/tools/gemini_chat.py
+/tools/gemini_client.py
+/tests/test_gemini_client.py
 /tools/gemini_tools.py
 /tools/gemini_drive.py
 /tools/gemini_studio.py
