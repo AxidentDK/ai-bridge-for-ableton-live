@@ -10,12 +10,39 @@ places where Live needs something from you first.
 "load Wavetable on track 2", "how loud is the bass track?", "find sounds like that
 snare". If it can be done through Live's API, it can be asked for.
 
+**[TOOLS.md](TOOLS.md) lists all 62 tools** and what each one does. You never call them
+by name — the assistant picks — but it is worth a skim, because you cannot ask for
+something you did not know was possible.
+
 ## Switching views — ask any time
 
 Live always opens in **Session** view. You can say *"switch to Arranger"* at the
 start of a session or at any point later, and it switches. Worth knowing because
 some work reads much better in one view than the other — arranging in Arranger,
 clip-launching in Session.
+
+**If you want Arranger, say so in your first message.** Session is Live's default,
+so that is where the assistant will build unless you tell it otherwise — and asking
+for Arranger halfway through a build means the material is already somewhere else.
+
+### Why this is worth understanding, and not a bug
+
+Live has **one transport**, shared by both views. Launching a Session clip starts
+it — the same transport the Arranger plays from. So the Arranger playhead runs on
+underneath while your Session clip loops on top.
+
+That is Live working as designed, and it is genuinely useful: it is how you jam
+clips against a running arrangement, and how Session material gets recorded into
+the Arranger in time. Any DAW that lets you do both has to share a clock somewhere.
+
+What it sounds like when nobody chose a view: you come back a few minutes later,
+the position counter says bar 190, the arrangement is empty, and an eight-bar loop
+is playing over the top of nothing. It sounds broken. It is not — it is one
+transport doing what it was told, twice, by two different things.
+
+So the view is **yours to pick**, not something the assistant should guess and not
+something to report. Pick one up front. If you want to move between them, say so,
+and say what the transport should be doing when you get there.
 
 ## Finding sounds by similarity — this one needs a setup step
 

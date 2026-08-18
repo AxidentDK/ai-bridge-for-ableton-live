@@ -32,7 +32,8 @@ scratch/
 # OUR WORKING DOCS — kept locally, never published.
 # Design notes, porting logs, roadmaps and research. Useful to us, useless to a user
 # of the bridge, and historically where private paths and personal details collected.
-# The public docs are README.md, docs/GUIDE.md and docs/PROTOCOL.md.
+# The public docs are README.md, docs/GUIDE.md, docs/PROTOCOL.md, docs/TOOLS.md and
+# docs/LOM_REFERENCE.md.
 /DESIGN.md
 /PORTING.md
 /docs/ROADMAP.md
@@ -40,6 +41,8 @@ scratch/
 /docs/AUDIO_UNDERSTANDING.md
 /docs/SIDECAR.md
 /docs/LIVE_TEST_PLAN.md
+# Compares our tool surface against the fork's — internal, like COMPARISON.md.
+/docs/TOOL_OVERVIEW.md
 
 # Personal terms for scripts/check_private.py. Kept local ON PURPOSE: a checker that
 # hard-codes your private folder names would publish what it is meant to hide.
@@ -61,3 +64,16 @@ AGENTS.md
 
 # Gemini review transcripts — may quote source and are not part of the project.
 gemini_reviews/
+
+# GEMINI DEVELOPMENT TOOLING — kept LOCAL, never published (Kim, 2026-08-18).
+# A second model driving the bridge is how WE develop and test it; it is not part of
+# the program a user installs, and it needs an API key nobody else has. Same reasoning
+# as the agent-instruction files above.
+# ⚠️ tools/ask_gemini.py, tools/gemini_chat.py, tools/gemini_client.py and
+# tests/test_gemini_client.py were tracked BEFORE this rule and are already public.
+# Removing them from HEAD is a separate decision — see the note in docs/GEMINI_TOOLS.md.
+/tools/gemini_tools.py
+/tools/gemini_drive.py
+/tools/gemini_studio.py
+/tests/test_gemini_tools.py
+/docs/GEMINI_TOOLS.md
