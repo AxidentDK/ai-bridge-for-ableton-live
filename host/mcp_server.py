@@ -198,10 +198,19 @@ TOOLS = [
                              "monitoring": {"type": "integer"}, "arm": {"type": "boolean"}},
                             ["track"])},
     {"name": "live_preview",
-     "description": ("Audition a browser item WITHOUT loading it — the browser's headphone "
-                     "button. Pairs with live_similar_sounds: find something similar, hear "
-                     "it, then load it. Call with stop=true to silence."),
-     "inputSchema": _schema({"name": {"type": "string"}, "path": {"type": "string"},
+     "description": ("Audition something WITHOUT loading it — the browser's headphone "
+                     "button. This is the 'hear it' step after live_find_sound or "
+                     "live_similar_sounds: pass the `path` they returned STRAIGHT IN. "
+                     "Those are filesystem paths and this resolves them to the browser "
+                     "item for you (it says so in `resolved_from_file`); a LOM browser "
+                     "path works too, as does `name`. If the file is on disk but not in "
+                     "Live's browser it says so and tells you to add the folder to "
+                     "Places, rather than failing with an unknown-root error. Call with "
+                     "stop=true to silence."),
+     "inputSchema": _schema({"name": {"type": "string"},
+                             "path": {"type": "string", "description":
+                                      "a filesystem path from a sound search, OR a LOM "
+                                      "browser path"},
                              "category": {"type": "string"}, "stop": {"type": "boolean"}})},
     {"name": "live_edit_notes",
      "description": ("Change or delete SPECIFIC notes by note_id, leaving every other note "
@@ -514,6 +523,57 @@ TOOLS = [
                      "peak dBFS, and band energies. Requires numpy."),
      "inputSchema": _schema({"path": {"type": "string", "description": "path to a .wav file"}},
                             ["path"])},
+    {"name": "live_clip_warp_markers",
+     "description": ("Inspect or edit an AUDIO clip's warp state and warp markers. Call "
+                     "with just clip_path to read: warping, warp_mode, the available "
+                     "modes, and every marker's sample_time/beat_time (Live returns these "
+                     "as opaque objects over the wire; this flattens them). Edits apply "
+                     "remove -> move -> add, each reporting its own outcome so one bad "
+                     "beat_time never loses the rest. NOTE: Live's LAST marker is a "
+                     "'shadow' marker — its implicit end-of-sample anchor — and cannot be "
+                     "moved. NOTE: changing `warping` makes Live re-analyse the sample on "
+                     "its main thread, so the NEXT call may time out; retry it."),
+     "inputSchema": _schema({
+         "clip_path": _PATH,
+         "warping": {"type": "boolean"},
+         "warp_mode": {"type": "integer", "description":
+                       "must be one of the clip's available_warp_modes"},
+         "add": {"type": "array",
+                 "description": ("markers to add. sample_time is in SECONDS, not samples "
+                                 "— passing 22050 for 'half a second at 44.1kHz' fails "
+                                 "with 'sample time is out of range'"),
+                 "items": {"type": "object", "properties": {
+                     "sample_time": {"type": "number",
+                                     "description": "position in the FILE, in seconds"},
+                     "beat_time": {"type": "number",
+                                   "description": "where that lands in the clip, in beats"}},
+                     "required": ["sample_time", "beat_time"]}},
+         "move": {"type": "array", "description": "move an EXISTING marker by a delta",
+                  "items": {"type": "object", "properties": {
+                      "beat_time": {"type": "number"},
+                      "beat_time_delta": {"type": "number"}},
+                      "required": ["beat_time", "beat_time_delta"]}},
+         "remove": {"type": "array", "description": "beat_times of markers to remove",
+                    "items": {"type": "number"}},
+         "limit": {"type": "integer", "description": "cap on markers returned"},
+     }, ["clip_path"])},
+    {"name": "live_clip_velocity_envelope",
+     "description": ("Drive a parameter from a MIDI clip's own note velocities — velocity "
+                     "to cutoff, to send level, to anything automatable. Turns the "
+                     "dynamics already in the clip into automation. min_value/max_value "
+                     "are in the PARAMETER's units, not 0-1. Velocity maps from 1-127 "
+                     "(not 0, which means 'no note'). hold=true gives each note a plateau "
+                     "for its duration; hold=false ramps between notes instead."),
+     "inputSchema": _schema({
+         "clip_path": _PATH,
+         "parameter_path": {"type": "string", "description":
+                            "LOM path of the parameter to automate"},
+         "min_value": {"type": "number"}, "max_value": {"type": "number"},
+         "invert": {"type": "boolean", "description":
+                    "loud notes give the LOW value instead of the high one"},
+         "hold": {"type": "boolean"},
+         "clear_first": {"type": "boolean"},
+     }, ["clip_path", "parameter_path"])},
     {"name": "live_show_view",
      "description": ("Switch Live's main view. name = Arranger | Session | Browser | "
                      "Detail | Detail/Clip | Detail/DeviceChain."),
@@ -811,6 +871,19 @@ def run_tool(name: str, args: dict):
         from api import Live
         return Live(b).choose_take(int(args["track"]), int(args["lane"]),
                                    int(args.get("clip", 0)))
+    if name == "live_clip_warp_markers":
+        from api import Live
+        return Live(b).warp_markers(
+            args["clip_path"], warping=args.get("warping"),
+            warp_mode=args.get("warp_mode"), add=args.get("add"),
+            move=args.get("move"), remove=args.get("remove"), limit=args.get("limit"))
+    if name == "live_clip_velocity_envelope":
+        from api import Live
+        return Live(b).velocity_envelope(
+            args["clip_path"], args["parameter_path"],
+            float(args.get("min_value", 0.0)), float(args.get("max_value", 1.0)),
+            bool(args.get("invert", False)), bool(args.get("hold", True)),
+            bool(args.get("clear_first", True)))
     if name == "live_show_view":
         from api import Live
         Live(b).show_view(args["name"])

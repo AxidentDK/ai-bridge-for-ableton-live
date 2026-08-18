@@ -551,6 +551,39 @@ def spectral_flatness(mono) -> float:
 
 NOTE_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 
+#: HOW A KEY IS SPELLED, which is not how a NOTE is spelled.
+#:
+#: ``NOTE_NAMES`` is all sharps, and that is right for naming a pitch — "C#4" is a note
+#: anyone reads. It is wrong for naming a KEY: it printed **"D# major"** for a piece in
+#: E flat. D♯ major is a theoretical key of nine sharps that no musician writes or reads;
+#: the name of that key is E♭ major. Reported to a producer, it is simply an error.
+#:
+#: The convention also differs between the two modes, which is why there are two tables:
+#: pitch class 8 is A♭ MAJOR but G♯ MINOR, and pitch class 1 is D♭ major but C♯ minor.
+#: Where both spellings are in real use the commoner one is chosen (F♯ major over G♭,
+#: E♭ minor over D♯ minor, B♭ minor over A♯ minor).
+KEY_NAMES_MAJOR = ("C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
+KEY_NAMES_MINOR = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B")
+
+
+def key_name(root: int, mode: str) -> str:
+    """The conventional name of a key — ``key_name(3, "major")`` is ``"Eb"``, not ``"D#"``."""
+    table = KEY_NAMES_MINOR if mode == "minor" else KEY_NAMES_MAJOR
+    return table[int(root) % 12]
+
+
+def relative_key(root: int, mode: str) -> tuple:
+    """The relative major of a minor key, or the relative minor of a major one.
+
+    They share every pitch class, so a chroma histogram CANNOT tell them apart — C minor
+    and E♭ major are the same seven notes and differ only in which is home. Correlation
+    picks one and the margin between them is tiny; naming the other explicitly is more
+    honest than presenting the winner as the answer.
+    """
+    if mode == "minor":
+        return (int(root) + 3) % 12, "major"
+    return (int(root) + 9) % 12, "minor"
+
 #: Krumhansl-Schmuckler key profiles: how strongly each scale degree is weighted in a
 #: tonal piece. Correlating a pitch-class histogram against all 24 rotations beats
 #: naive "count the accidentals" because it uses EMPHASIS — a passing F# does not
@@ -686,13 +719,32 @@ def key_scores(hist) -> list:
     return scored
 
 
+#: The smallest margin over the runner-up that still means something. The bridge already
+#: used 0.05 to flag a key "ambiguous"; naming it here stops the two from drifting and
+#: lets the STORAGE path apply the same standard the display path does.
+#:
+#: It is not a tuning knob, it is a floor on arbitrariness. A drum-rack preview scored
+#: G minor 0.2428 against F# minor 0.1944 — a margin of 0.048 among four candidates
+#: bunched between 0.13 and 0.24 — and the winner flipped between G and E depending on
+#: which resampler produced the signal. An answer that changes with the resampler is not
+#: an answer, and storing it makes a drum kit searchable by a key it does not have.
+MIN_KEY_MARGIN = 0.05
+
+
 def key_from_chroma(hist) -> dict:
-    """{key, scale, key_strength} — the flat shape the sample index stores."""
+    """{key, scale, key_strength} — the flat shape the sample index stores.
+
+    Returns ``{}`` when no key can honestly be claimed: too flat to carry one, or too
+    close between the top two to mean anything.
+    """
     scored = key_scores(hist)
     if not scored:
         return {}
     score, root, mode = scored[0]
-    return {"key": NOTE_NAMES[root], "scale": mode,
+    if score - scored[1][0] < MIN_KEY_MARGIN:
+        return {}
+    # key_name, not NOTE_NAMES: the index stored "D#" for keys that are called "Eb".
+    return {"key": key_name(root, mode), "scale": mode,
             # Strength is the MARGIN over the runner-up, not the raw correlation.
             # C major and A minor share every note and both correlate highly; the gap
             # between them is what says whether the answer means anything.
@@ -797,6 +849,36 @@ def _metrical_margin(acf, lag: int) -> float:
     if not rivals:
         return 1.0
     return float(np.clip(1.0 - max(rivals) / winner, 0.0, 1.0))
+
+
+#: How close a file must sit to a whole bar count for that to count as evidence, in bars.
+#: Beyond this the fit says nothing; the bonus fades to zero rather than falling off a
+#: cliff, so no single threshold decides an answer.
+_BAR_FIT_TOLERANCE = 0.05
+
+
+def bar_fit(bpm: float, duration: float | None):
+    """How nearly ``duration`` is a whole number of bars at ``bpm``. ``(bars, error)``.
+
+    Separate from ``_snap_to_whole_bars`` because it MEASURES the fit without changing
+    the tempo. A caller analysing arbitrary audio must not have its tempo pulled onto a
+    bar grid — a genuine 90 BPM clip lasting a bar and a half would come back 120 — but
+    the fit is still evidence, and throwing it away cost the confidence all of its
+    meaning: a rendered mix read 96.1 BPM (8.008 bars, right) and a sustained pad read
+    131.6 BPM (10.97 bars, wrong), and BOTH were reported at confidence 0.0.
+
+    ⚠️ A good bar fit does NOT resolve the octave. 20 s is a whole number of bars at 96
+    and at 192 alike, and those are different pieces of music — see ``_snap_to_whole_bars``
+    on why a tempo and its double are not interchangeable. This corroborates the pulse,
+    not which octave it sits in.
+    """
+    if not duration or duration <= 0 or bpm <= 0:
+        return None, None
+    bars = duration * bpm / 240.0
+    nearest = round(bars)
+    if nearest < 1:
+        return None, None
+    return int(nearest), abs(bars - nearest)
 
 
 def _snap_to_whole_bars(bpm: float, duration: float | None):
@@ -947,14 +1029,31 @@ def tempo(onsets, flux=None, sr: int = ANALYSIS_SR, duration: float | None = Non
                         wide_bpms, len(onsets), duration)
                     confidence = prominence * _metrical_margin(posterior,
                                                                int(lags[best]))
+                    fit_error = None
                     if bars:
                         # Two independent lines of evidence agreeing — the envelope's
                         # own periodicity and the file's length — is worth more than
                         # either alone.
                         confidence = min(1.0, confidence + 0.1)
-                    return {"bpm": round(bpm, 1),
-                            "bpm_confidence": round(confidence, 2),
-                            "bars": bars}
+                    else:
+                        # NOT SNAPPING, but the length is still evidence. Without this the
+                        # confidence was 0.0 for a correct 96.1 and for a wrong 131.6
+                        # alike, which is no signal at all. Graded by how well it fits, so
+                        # no threshold decides the answer on its own.
+                        bars, fit_error = bar_fit(bpm, duration)
+                        if bars and fit_error is not None:
+                            confidence = min(1.0, confidence + 0.5 * max(
+                                0.0, 1.0 - fit_error / _BAR_FIT_TOLERANCE))
+                        else:
+                            bars = None
+                    out = {"bpm": round(bpm, 1),
+                           "bpm_confidence": round(confidence, 2),
+                           "bars": bars}
+                    if fit_error is not None:
+                        # Reported so a caller can see WHY the confidence moved, and so a
+                        # bad fit is visible rather than merely producing a low number.
+                        out["bar_fit_error"] = round(fit_error, 3)
+                    return out
 
     if len(onsets) < 4:
         return {}

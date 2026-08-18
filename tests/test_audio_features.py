@@ -143,6 +143,39 @@ def test_integrated_loudness_matches_the_standards_anchor():
     assert abs(got - (-20.0)) < 0.3, got
 
 
+def test_digital_silence_is_reported_as_silent_not_characterised():
+    """Found by rendering stems from a real set.
+
+    Two send tracks with nothing routed to them came out as literal digital silence —
+    every sample zero, true peak 0.00000000 — and ``describe`` called them
+    "dark, noisy, percussive, compressed". Every label was a ratio computed from zeros.
+    A producer handed that would believe an empty stem contained something.
+    """
+    import audio_features
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "silence.wav")
+        _write(path, np.zeros(2 * RATE))
+        out = audio_features.describe(path)
+    assert out["labels"] == ["silent"], out["labels"]
+    assert out.get("silent") is True
+    for wrong in ("dark", "noisy", "percussive", "compressed", "bright", "tonal"):
+        assert wrong not in out["labels"], f"still characterising silence as {wrong!r}"
+    assert "silent" in out["summary"]
+
+
+def test_a_very_quiet_but_real_signal_is_still_described():
+    """The silence guard must not swallow quiet material — only genuine nothing."""
+    import audio_features
+    t = np.arange(2 * RATE) / RATE
+    quiet = np.sin(2 * np.pi * 220.0 * t) * 0.02          # about -34 dBFS
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "quiet.wav")
+        _write(path, quiet)
+        out = audio_features.describe(path)
+    assert out.get("silent") is not True, "a -34 dBFS tone is not silence"
+    assert out["labels"] != ["silent"]
+
+
 def test_white_noise_gets_no_key():
     """Krumhansl-Schmuckler always returns a winner, and correlation is scale
     invariant — so it cannot tell a flat histogram from a peaked one. White noise came

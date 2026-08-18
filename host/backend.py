@@ -7,8 +7,8 @@ default and the fallback — it is what runs today, and it needs no key.
 
 This module answers one question — *is a Gemini key available?* — and nothing else.
 It deliberately does **not** call any API, so it stays importable, dependency-free
-and instant. Wiring Gemini's function-calling loop onto the bridge's tool registry
-is a separate piece of work; this is the switch it will read.
+and instant. Wiring a function-calling loop onto the bridge's tool registry is separate
+work; this is the switch such a loop reads.
 
 Resolution order (first hit wins), so a temporary override never needs a file edit:
 

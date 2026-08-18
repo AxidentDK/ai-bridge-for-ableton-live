@@ -35,7 +35,7 @@ import traceback
 #: in BOTH repos, in the same commit-worth of work. Changing this constant to make a
 #: red test go green, without copying the file, defeats the whole arrangement and
 #: recreates the exact failure it was built to prevent.
-EXPECTED_SHA256 = "d7895fd99f417386019c010743fe3a0ae1ecc3665b51f84a379f77d0bd97f8e1"
+EXPECTED_SHA256 = "d8fb9dee735b72eba3392385167ceec10af1e5bf1cf087b7b35355a3b7ac5071"
 
 #: Where the file lives in each repo. The listener owns it; the bridge carries the
 #: copy. Both are listed so this test file needs no per-repo edit.

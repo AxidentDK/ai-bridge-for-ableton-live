@@ -259,6 +259,82 @@ class Live:
                 "from": start_value, "to": end_value,
                 "start_time": start_time, "length": length, "written": written}
 
+    def warp_markers(self, clip_path: str, warping=None, warp_mode=None,
+                     add=None, move=None, remove=None, limit=None) -> dict:
+        """Inspect or edit an audio clip's warp state and its markers.
+
+        Everything is optional, so calling it with just a path is a read. Edits are applied
+        removes-then-moves-then-adds, each reporting its own outcome rather than aborting
+        the request.
+
+        Adding needs the remote script: Live will not build a ``WarpMarker`` from a dict,
+        a tuple, a list, or two floats — the object has to be constructed in-process, which
+        is why this is an RPC and not four calls through the generic proxy.
+
+        ⚠️ ``sample_time`` is in SECONDS, not samples, despite the name. 22050 is not
+        "half a second at 44.1 kHz", it is six hours in, and Live answers "Warp marker
+        sample time is out of range."
+
+        Two more behaviours worth expecting, both found by trying them: Live's LAST marker
+        is a "shadow" marker (its implicit end-of-sample anchor) and refuses to move; and
+        changing ``warping`` makes Live re-analyse the sample on its main thread, so the
+        call after it may time out and want retrying.
+        """
+        params: dict = {"path": clip_path}
+        for key, value in (("warping", warping), ("warp_mode", warp_mode), ("add", add),
+                           ("move", move), ("remove", remove), ("limit", limit)):
+            if value is not None:
+                params[key] = value
+        return self.b.request("clip_warp_markers", **params)
+
+    def velocity_envelope(self, clip_path: str, parameter_path: str,
+                          min_value: float = 0.0, max_value: float = 1.0,
+                          invert: bool = False, hold: bool = True,
+                          clear_first: bool = True) -> dict:
+        """Drive a parameter from the clip's own note velocities.
+
+        The musical point: a MIDI clip already encodes dynamics in its velocities, and this
+        turns that shape into automation — velocity to filter cutoff, to send level, to
+        anything automatable. It is the move that makes a static patch respond to playing.
+
+        Each note contributes a point at its start, and with ``hold`` a second at its end,
+        so the value is a plateau for the note's duration instead of a ramp toward the next
+        one. Ramping is what you get with ``hold=False``, which is the smoother, less
+        rhythmic option.
+
+        ``min_value``/``max_value`` are in the PARAMETER's units, not 0-1, because the
+        caller knows what it is automating and the envelope does not. Velocity is mapped
+        from its own 1-127 range: mapping from 0 would waste the bottom of the range on a
+        velocity that means "no note".
+        """
+        notes = self.notes(clip_path)
+        if not notes:
+            raise ValueError(f"{clip_path} has no notes to take velocities from")
+        span = max_value - min_value
+        points = []
+        for note in sorted(notes, key=lambda n: n["start_time"]):
+            velocity = float(note.get("velocity", 100))
+            fraction = max(0.0, min(1.0, (velocity - 1.0) / 126.0))
+            if invert:
+                fraction = 1.0 - fraction
+            value = round(min_value + span * fraction, 6)
+            start = round(float(note["start_time"]), 6)
+            points.append({"time": start, "value": value})
+            if hold:
+                # A hair before the end, so the next note's point wins the boundary
+                # rather than the two fighting over the same instant.
+                end = float(note["start_time"]) + float(note.get("duration", 0.25))
+                points.append({"time": round(end - 1e-4, 6), "value": value})
+        points.sort(key=lambda p: p["time"])
+        if clear_first:
+            self.b.request("clip_envelope_clear", path=clip_path,
+                           parameter=parameter_path)
+        written = self.b.request("clip_envelope_insert", path=clip_path,
+                                 parameter=parameter_path, steps=points)
+        return {"clip": clip_path, "parameter": parameter_path, "notes": len(notes),
+                "points": len(points), "from": min_value, "to": max_value,
+                "inverted": invert, "hold": hold, "written": written}
+
     # --- watching Live (semantic observer bundles) ----------------------------------------
     # Observers turn the bridge from something that answers questions into something
     # that NOTICES. Raw `observe` needs a path and a property per subscription, which
@@ -465,20 +541,60 @@ class Live:
         return {"track": track, "changed": changed, "now": self.routing(track)}
 
     # --- browser preview ------------------------------------------------------------------
+    @staticmethod
+    def _is_file_path(value: str) -> bool:
+        """A filesystem path, or a LOM browser path?
+
+        They are told apart by shape, not by guessing: a LOM path is space-separated
+        words ("live_app browser drums children 2") and never contains a separator or a
+        drive letter, while anything the sound search returns is an absolute file path.
+        """
+        return ("\\" in value or "/" in value
+                or (len(value) > 2 and value[1] == ":"))
+
     def preview(self, name: str | None = None, path: str | None = None,
                 stop: bool = False, category: str | None = None) -> dict:
         """Audition a browser item WITHOUT loading it into the set.
 
         Live's browser exposes ``preview_item``/``stop_preview``; this is what the
-        browser's headphone button does. Pairs with ``live_similar_sounds``: find
-        something similar, hear it, and only then load it.
+        browser's headphone button does.
+
+        ⚠️ THE THING THIS HAD TO LEARN. ``live_find_sound`` returns ``path`` as a
+        FILESYSTEM path; ``preview_item`` wants a LOM BROWSER path. Same field name, two
+        meanings, and the result was that the one sequence this project exists for —
+        describe a sound, find it, hear it — broke at "hear it" with
+        ``unknown root 'C:\\ProgramData\\...'``. An agent hit it twice in the first real
+        session, gave up auditioning, and picked a stock kit by name instead.
+
+        So a filesystem path is now ACCEPTED and resolved: the basename is looked up in
+        the browser, which is what a human would do. Found in the search, heard in the
+        browser, no translation step the caller has to know about.
         """
         if stop:
             self.b.call("live_app browser", "stop_preview")
             return {"stopped": True}
+        resolved_from = resolved_name = None
+        if path and self._is_file_path(path):
+            # A file path from live_find_sound / live_similar_sounds. Look it up by name.
+            import os as _os                                          # noqa: PLC0415
+            resolved_from, base = path, _os.path.basename(path)
+            hit = self.browse(category or "sounds", query=base, limit=1, max_depth=3)
+            if not hit["items"]:
+                for cat in self.BROWSER_CATEGORIES:
+                    hit = self.browse(cat, query=base, limit=1, max_depth=3)
+                    if hit["items"]:
+                        break
+            if not hit["items"]:
+                raise ValueError(
+                    f"{base!r} was found on disk but is not in Live's browser, so it "
+                    "cannot be auditioned. Add its folder to Live's Places, or load it "
+                    "onto a track instead and play it there.")
+            path, resolved_name = hit["items"][0]["path"], hit["items"][0]["name"]
         if path:
             item_path = path
-            found = path.rsplit(" children ", 1)[-1]
+            # The name if we looked it up, otherwise the last path segment — which is a
+            # bare index like "101" and tells the caller nothing about what it is hearing.
+            found = resolved_name or path.rsplit(" children ", 1)[-1]
         else:
             if not name:
                 raise ValueError("give name (or path), or stop=true")
@@ -492,8 +608,12 @@ class Live:
                 raise ValueError("no browser item matching %r" % name)
             item_path, found = hit["items"][0]["path"], hit["items"][0]["name"]
         self.b.call("live_app browser", "preview_item", {"$path": item_path})
-        return {"previewing": found, "path": item_path,
-                "note": "call again with stop=true to silence it"}
+        result = {"previewing": found, "path": item_path,
+                  "note": "call again with stop=true to silence it"}
+        if resolved_from:
+            # Say so, rather than silently swapping the caller's argument for another.
+            result["resolved_from_file"] = resolved_from
+        return result
 
     # --- semantic description (MIDI tier) ------------------------------------------------
     def describe_clip(self, clip_path: str) -> dict:

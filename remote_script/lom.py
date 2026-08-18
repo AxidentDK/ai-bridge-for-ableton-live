@@ -34,6 +34,18 @@ def _is_index(token: str) -> bool:
     return token.isdigit()
 
 
+def _is_negative_index(token: str) -> bool:
+    """``-1`` and friends: an index Python would accept and Live's collections will not.
+
+    Worth its own check because of how it fails otherwise. ``"-1".isdigit()`` is False, so
+    the token is taken for an ATTRIBUTE name and the caller gets
+    ``'Vector' object has no attribute '-1'`` — which says nothing about indexing and
+    nothing about what to do instead. An agent reaching for ``track: -1`` to mean "the
+    master track" hit exactly this and lost its bounce step to it.
+    """
+    return len(token) > 1 and token[0] == "-" and token[1:].isdigit()
+
+
 def resolve(roots: dict, path: str):
     """Resolve a space-separated LOM path to an object.
 
@@ -49,6 +61,13 @@ def resolve(roots: dict, path: str):
     obj = roots[root]
     walked = [root]
     for tok in tokens[1:]:
+        if _is_negative_index(tok):
+            raise LomError(
+                "no_such_path",
+                f"{tok!r} at {' '.join(walked)!r}: Live's collections do not accept "
+                "negative indices. Count from 0, or use the named object — "
+                "'live_set master_track' for the master, "
+                "'live_set return_tracks 0' for the first return.")
         try:
             obj = obj[int(tok)] if _is_index(tok) else getattr(obj, tok)
         except (AttributeError, IndexError, KeyError, TypeError) as exc:

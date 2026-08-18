@@ -103,6 +103,25 @@ def test_resolve_ref():
     assert call(ctx, "resolve", path="live_set tracks 9")["result"] is None
 
 
+def test_a_negative_index_says_what_to_do_instead():
+    """``track: -1`` for "the master track" used to fail unreadably.
+
+    ``"-1".isdigit()`` is False, so the token was taken for an ATTRIBUTE name and the
+    caller got ``'Vector' object has no attribute '-1'`` — which mentions neither indexing
+    nor the alternative. An agent reaching for the master track hit this and lost a step
+    to it, so the error now names the fix.
+    """
+    _, ctx = make_context()
+    reply = call(ctx, "get", path="live_set tracks -1", prop="name")
+    message = reply["error"]["message"]
+    assert "negative indices" in message, message
+    assert "master_track" in message and "return_tracks" in message, message
+    # A real index still resolves, and a plain bad name still reports normally.
+    assert call(ctx, "get", path="live_set tracks 1", prop="name")["result"] == "Pad"
+    assert "no 'nope'" in call(ctx, "get", path="live_set nope",
+                               prop="name")["error"]["message"]
+
+
 def test_children_introspection():
     _, ctx = make_context()
     kids = call(ctx, "children", path="live_set")["result"]
