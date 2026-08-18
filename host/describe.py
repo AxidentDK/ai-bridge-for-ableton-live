@@ -72,7 +72,8 @@ def key_from_histogram(hist: list[float]) -> dict:
     # module is pure stdlib so that `api.py` can describe MIDI on a machine with no
     # numpy, and a top-level import would take that away. `shared_dsp`'s key functions
     # are pure Python and its numpy import is soft, so this works there too.
-    from shared_dsp import key_scores, tonal_contrast
+    from shared_dsp import (MIN_KEY_MARGIN, key_name, key_scores, relative_key,
+                            tonal_contrast)
 
     if tonal_contrast(hist) < _MIN_TONAL_CONTRAST:
         return {"key": None, "ambiguous": True,
@@ -85,14 +86,32 @@ def key_from_histogram(hist: list[float]) -> dict:
     allowed = {(root + s) % 12 for s in scale}
     total = sum(hist)
     in_key = sum(h for pc, h in enumerate(hist) if pc in allowed)
-    return {
-        "key": f"{NOTE_NAMES[root]} {mode}",
+    # key_name, not NOTE_NAMES: the all-sharp table named a piece in E flat "D# major",
+    # a theoretical key of nine sharps that nobody writes.
+    out = {
+        "key": f"{key_name(root, mode)} {mode}",
         "confidence": round(float(score), 3),
-        "runner_up": f"{NOTE_NAMES[runner[1]]} {runner[2]}",
+        "runner_up": f"{key_name(runner[1], runner[2])} {runner[2]}",
         "margin": round(float(score - runner[0]), 3),
         "in_key_fraction": round(in_key / total, 3) if total else 0.0,
-        "ambiguous": bool(score - runner[0] < 0.05),
+        # The same floor the STORAGE path uses to refuse a key outright — one constant,
+        # so display and index cannot drift into disagreeing about what counts as an
+        # answer.
+        "ambiguous": bool(score - runner[0] < MIN_KEY_MARGIN),
     }
+    # THE RELATIVE IS NAMED, ALWAYS. A minor key and its relative major contain the same
+    # seven pitch classes, so a chroma histogram cannot separate them even in principle —
+    # a piece written in C minor was reported as E flat major, which is the right notes
+    # and the wrong home. Correlation still picks a winner and the margin between the two
+    # is tiny, so presenting only the winner overstates what was measured.
+    rel_root, rel_mode = relative_key(root, mode)
+    out["relative"] = f"{key_name(rel_root, rel_mode)} {rel_mode}"
+    if out["runner_up"] == out["relative"]:
+        out["ambiguous"] = True
+        out["note"] = (f"{out['key']} and {out['relative']} share every note; chroma "
+                       "cannot tell them apart. Which one it is depends on where the "
+                       "music comes to rest, which needs the bass line or the ending.")
+    return out
 
 
 def detect_key(notes: list[dict]) -> dict:

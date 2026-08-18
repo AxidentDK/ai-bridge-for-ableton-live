@@ -150,27 +150,48 @@ def resolve_db_path(db_path: str | None = None) -> Path | None:
     return None
 
 
+#: Live's own preview tree. Every device preset and rack in the Core Library has a short
+#: .ogg audition clip under here, in a mirror of the real folder structure:
+#:
+#:     preview  .../Core Library/Ableton Folder Info/Previews/Devices/.../Bass.adv.ogg
+#:     preset   .../Core Library/Devices/.../Bass.adv
+#:
+#: Deleting the segment gives the preset. Checked against the whole index: 2,550 of 2,550
+#: previews map to a preset that exists on disk.
+_ABLETON_PREVIEWS = os.sep + "Ableton Folder Info" + os.sep + "Previews" + os.sep
+
+
 def preset_for(path: str) -> str | None:
-    """The loadable preset a plugin PREVIEW demonstrates, or None.
+    """The loadable preset a PREVIEW demonstrates, or None.
 
-    Nearly half a real index turned out to be NKS preview audio rather than samples —
-    short demos a plugin ships so its browser can audition presets without loading
-    them. That is not noise: it means the presets themselves become searchable by
-    sound. But a caller wants the preset, not the demo, and the two are not in the
-    same folder:
+    Nearly half a real index turned out to be preview audio rather than samples — short
+    demos shipped so a browser can audition presets without loading them. That is not
+    noise: it means the presets themselves become searchable BY SOUND, which is the whole
+    point of the listening index. But a caller wants the preset, not the demo, and the two
+    are never in the same folder.
 
-        preview  .../presets/.previews/Abyss.nksf.ogg
-        preset   .../presets/Abyss.nksf
+    Two layouts, both derived rather than stored, so they work on everything already
+    indexed without a re-scan or a schema change:
 
-    Derived rather than stored, so it works on everything already indexed without a
-    re-scan or a schema change.
+        NKS      .../presets/.previews/Abyss.nksf.ogg   -> .../presets/Abyss.nksf
+        Ableton  .../Ableton Folder Info/Previews/Devices/.../Bass.adv.ogg
+                                                      -> .../Devices/.../Bass.adv
+
+    The Ableton case was found when a sub-bass search returned
+    ``Synth Organ Long Release.adv.ogg`` and there was no way to act on it. Mapping it
+    beats hiding it: 2,550 Ableton device presets become searchable by how they sound,
+    and ``live_load_device`` can load what comes back.
     """
-    lower = path.lower()
-    if not lower.endswith(".ogg") or f"{os.sep}.previews{os.sep}" not in lower:
+    if not path.lower().endswith(".ogg"):
         return None
-    previews_dir, filename = os.path.split(path)
-    candidate = os.path.join(os.path.dirname(previews_dir), filename[:-4])
-    return candidate if os.path.exists(candidate) else None
+    if f"{os.sep}.previews{os.sep}" in path.lower():
+        previews_dir, filename = os.path.split(path)
+        candidate = os.path.join(os.path.dirname(previews_dir), filename[:-4])
+        return candidate if os.path.exists(candidate) else None
+    if _ABLETON_PREVIEWS in path:
+        candidate = path.replace(_ABLETON_PREVIEWS, os.sep)[:-4]
+        return candidate if os.path.exists(candidate) else None
+    return None
 
 
 def _connect(path: Path) -> sqlite3.Connection:

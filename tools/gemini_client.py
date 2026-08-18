@@ -105,24 +105,23 @@ def _is_out_of_credit(detail: str) -> bool:
     return "RESOURCE_EXHAUSTED" in detail or "billing" in detail.lower()
 
 
-def ask(prompt_or_turns, key: str, *, model: str = DEFAULT_MODEL,
-        system: str | None = PREAMBLE, timeout: int = 300, attempts: int = 5,
-        on_retry=None) -> str:
-    """One request. ``prompt_or_turns`` is either a string or a list of API turns.
+def post(body: dict, key: str, *, model: str = DEFAULT_MODEL, timeout: int = 300,
+         attempts: int = 5, on_retry=None) -> dict:
+    """One POST to ``generateContent``, with the retry policy, returning the raw payload.
 
-    ``on_retry(message)`` is called before each backoff sleep so a window can say what
-    it is waiting for instead of appearing to hang for two and a half minutes.
+    Split out of ``ask`` when function calling arrived. A tool-calling loop needs the
+    SAME transport — the same backoff, the same out-of-credit discrimination, the same
+    header-not-URL handling of the key — but it cannot use ``ask``, because ``ask``
+    throws away everything except the text, and function calling lives in the parts that
+    get thrown away.
+
+    Copying the loop was the alternative. This project has already paid for that choice
+    three times in its DSP code, and the cost each time was a fix that had to be found
+    twice.
+
+    ``body`` is passed through untouched: this function knows about HTTP and nothing
+    about what a request means.
     """
-    turns = ([{"role": "user", "parts": [{"text": prompt_or_turns}]}]
-             if isinstance(prompt_or_turns, str) else list(prompt_or_turns))
-    body: dict = {"contents": turns}
-    if system:
-        # systemInstruction rather than a first user turn: it stays in force for every
-        # turn of a long chat, where a prepended message drifts out of attention as the
-        # history grows — and would be re-sent, or lost, depending on how history is
-        # trimmed later.
-        body["systemInstruction"] = {"parts": [{"text": system}]}
-
     url = f"{API_ROOT}/models/{model}:generateContent"
     encoded = json.dumps(body).encode("utf-8")
     payload = None
@@ -168,6 +167,29 @@ def ask(prompt_or_turns, key: str, *, model: str = DEFAULT_MODEL,
                               retryable=True) from None
     if payload is None:
         raise GeminiError("no response")
+    return payload
+
+
+def ask(prompt_or_turns, key: str, *, model: str = DEFAULT_MODEL,
+        system: str | None = PREAMBLE, timeout: int = 300, attempts: int = 5,
+        on_retry=None) -> str:
+    """One request, answered as text. ``prompt_or_turns`` is a string or a list of turns.
+
+    ``on_retry(message)`` is called before each backoff sleep so a window can say what
+    it is waiting for instead of appearing to hang for two and a half minutes.
+    """
+    turns = ([{"role": "user", "parts": [{"text": prompt_or_turns}]}]
+             if isinstance(prompt_or_turns, str) else list(prompt_or_turns))
+    body: dict = {"contents": turns}
+    if system:
+        # systemInstruction rather than a first user turn: it stays in force for every
+        # turn of a long chat, where a prepended message drifts out of attention as the
+        # history grows — and would be re-sent, or lost, depending on how history is
+        # trimmed later.
+        body["systemInstruction"] = {"parts": [{"text": system}]}
+
+    payload = post(body, key, model=model, timeout=timeout, attempts=attempts,
+                   on_retry=on_retry)
 
     candidates = payload.get("candidates") or []
     if not candidates:

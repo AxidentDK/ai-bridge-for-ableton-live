@@ -44,9 +44,13 @@ class Bridge(ControlSurface):
                              "observe", "unobserve", "batch",
                              "clip_get_notes", "clip_add_notes", "clip_remove_notes",
                              "clip_envelope_insert", "clip_envelope_read",
-                             "clip_envelope_clear"],
+                             "clip_envelope_clear", "clip_warp_markers"],
             "registry": self._registry,
             "note_spec_factory": Live.Clip.MidiNoteSpecification,
+            # Injected for the same reason as the note spec above: Live refuses to build
+            # a WarpMarker from a dict, tuple, list or pair of floats, so the object must
+            # be constructed in-process — and `warp.py` stays free of a Live import.
+            "warp_marker_factory": Live.Clip.WarpMarker,
         }
         self._server = SocketServer(
             self._handle_request, log=self.log_message,

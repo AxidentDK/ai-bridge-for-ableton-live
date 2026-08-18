@@ -143,10 +143,32 @@ def analyze(path: str) -> dict:
     }
 
 
+#: Below this peak there is nothing to describe. -60 dBFS rather than exactly zero, so a
+#: stem carrying only dither or a fading tail is caught too.
+_SILENCE_PEAK_DBFS = -60.0
+
+
 def describe(path: str) -> dict:
     """Feature analysis plus plain-language character labels."""
     f = analyze(path)
     if "error" in f:
+        return f
+
+    # SILENCE IS NOT A CHARACTER. Found by rendering stems: two send tracks with nothing
+    # routed to them came out as literal digital silence — every sample zero, true peak
+    # 0.00000000 — and were described as "dark, noisy, percussive, compressed". Every one
+    # of those labels is a ratio computed from zeros, so the function was confidently
+    # characterising nothing at all. Plausible, wrong, and raising nothing: exactly the
+    # failure this project keeps having to hunt down, and the reason a producer must never
+    # be told an empty stem sounds like something.
+    peak = f.get("peak_dbfs")
+    if peak is None or peak <= _SILENCE_PEAK_DBFS:
+        f["labels"] = ["silent"]
+        f["silent"] = True
+        f["summary"] = (f"silent ({peak:.0f} dBFS peak), {f['duration_s']:.0f}s"
+                        if peak is not None else f"silent, {f['duration_s']:.0f}s")
+        f["note"] = ("Nothing above -60 dBFS: there is no character to measure. An empty "
+                     "send or an unrouted track renders like this.")
         return f
 
     labels = []
@@ -175,15 +197,33 @@ def describe(path: str) -> dict:
         elif f["stereo_correlation"] < 0.5:
             labels.append("wide")
 
-    parts = list(labels)
+    # A KEY ON A DRUM STEM IS NOT A KEY. The rendered drum track came back "E minor",
+    # confidence 0.402, `ambiguous: false` — a confident answer about material that
+    # cannot have one. The chroma gate upstream only sees the histogram, and a kit with
+    # tuned toms and a ringing snare clears it. Percussive material is exactly the case
+    # the tool's own note warns about, so the warning is put where a caller will see it:
+    # on the value, not in prose somewhere else.
     key = f.get("key") or {}
+    if key.get("key") and "percussive" in labels:
+        key = dict(key, ambiguous=True,
+                   note=("percussive material — a drum kit has pitched components but no "
+                         "key, so treat this as a resonance, not a tonal centre"))
+        f["key"] = key
+
+    parts = list(labels)
     if key.get("key") and not key.get("ambiguous"):
         parts.append(key["key"])
     # Only claim a tempo when the onsets were regular enough to mean it.
     if f.get("tempo_bpm") and (f.get("tempo_confidence") or 0) >= 0.5:
         parts.append(f"~{f['tempo_bpm']:g} BPM")
     elif f.get("tempo_bpm"):
-        parts.append(f"~{f['tempo_bpm']:g} BPM (uncertain)")
+        # Say WHY it is uncertain when the length corroborates the pulse. "96.1 BPM
+        # (uncertain)" and "96.1 BPM (8 bars, octave uncertain)" are very different
+        # messages: the second tells a producer the grid is right and only the note
+        # values are in doubt — and a tempo and its double are different music.
+        bars = f.get("bars")
+        parts.append(f"~{f['tempo_bpm']:g} BPM ({bars} bars, octave uncertain)"
+                     if bars else f"~{f['tempo_bpm']:g} BPM (uncertain)")
     parts.append(f"{f['duration_s']:g}s")
 
     f["labels"] = labels

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import traceback
 
-from . import envelopes, lom, notes
+from . import envelopes, lom, notes, warp
 
 BRIDGE_VERSION = "0.4.0"
 
@@ -178,6 +178,14 @@ def _clip_envelope_clear(context, params, client):
         context["roots"], params["path"], params.get("parameter"))
 
 
+def _clip_warp_markers(context, params, client):
+    return warp.warp_markers(
+        context["roots"], params["path"], context["warp_marker_factory"],
+        warping=params.get("warping"), warp_mode=params.get("warp_mode"),
+        add=params.get("add"), move=params.get("move"),
+        remove=params.get("remove"), limit=params.get("limit"))
+
+
 _METHODS = {
     "hello": _hello,
     "ping": _ping,
@@ -197,4 +205,5 @@ _METHODS = {
     "clip_envelope_insert": _clip_envelope_insert,
     "clip_envelope_read": _clip_envelope_read,
     "clip_envelope_clear": _clip_envelope_clear,
+    "clip_warp_markers": _clip_warp_markers,
 }
