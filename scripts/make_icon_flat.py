@@ -161,6 +161,38 @@ svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{W}" viewB
 </svg>
 '''
 
-out = pathlib.Path(__file__).resolve().parent.parent / "assets" / "ai-bridge.svg"
+assets = pathlib.Path(__file__).resolve().parent.parent / "assets"
+out = assets / "ai-bridge.svg"
 out.write_text(svg, encoding="utf-8")
 print(f"{len(gradients)} per-stroke gradients -> {out}")
+
+# --- .ico: RASTERISE THE SVG AT EACH SIZE, do not scale one render ----------------------
+# `magick -define icon:auto-resize` rasterises once and resizes down, so 16 and 32 — the
+# sizes actually seen — come out of a reduction. A vector source can be drawn correctly at
+# any size, and drawing it at each one is the entire advantage of having a vector source.
+# It also wrote uncompressed BMP frames: six of them came to 370 KB.
+import shutil                                                          # noqa: E402
+import subprocess                                                      # noqa: E402
+import sys                                                             # noqa: E402
+import tempfile                                                        # noqa: E402
+
+SIZES = (256, 128, 64, 48, 32, 16)
+magick = shutil.which("magick") or shutil.which("convert")
+if not magick:
+    print("  (ImageMagick not found — SVG written, .ico not rebuilt)")
+    raise SystemExit(0)
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from icon_ico import write_ico                                         # noqa: E402
+from PIL import Image                                                  # noqa: E402
+
+frames = []
+with tempfile.TemporaryDirectory() as tmp:
+    for size in SIZES:
+        png = pathlib.Path(tmp) / f"{size}.png"
+        subprocess.run([magick, "-background", "none", "-density", str(size * 4),
+                        str(out), "-resize", f"{size}x{size}", str(png)], check=True)
+        frames.append(Image.open(png).convert("RGBA"))
+    written = write_ico(frames, assets / "ai-bridge-flat.ico")
+print(f"assets/ai-bridge-flat.ico  {written:,} bytes, {len(frames)} frames "
+      f"(each rasterised at its own size)")

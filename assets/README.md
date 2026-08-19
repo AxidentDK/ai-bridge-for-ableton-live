@@ -9,11 +9,30 @@ the geometry in one place and every size follows.
 | file | how it is made | rebuild with |
 |---|---|---|
 | `ai-bridge-lit.ico` | **rendered** — a lit 3-D surface | `python scripts/render_icon.py` |
-| `ai-bridge-flat.ico` | **vector** — SVG with per-stroke gradients | `python scripts/make_icon_flat.py`, then ImageMagick |
+| `ai-bridge-flat.ico` | **vector** — SVG with per-stroke gradients | `python scripts/make_icon_flat.py` |
 | `ai-bridge.svg` | the vector source, written by the script above | |
 | `ai-bridge-lit.png` | 1024px preview of the rendered version | |
 
 The installer uses **`ai-bridge-lit.ico`** and falls back to the flat one if it is absent.
+
+## Every frame is made at its own size
+
+This is the thing most worth keeping. Both files started out built the easy way — render or
+rasterise once, then let something scale it down to the other sizes — and the 16 and 32
+pixel frames, the ones actually seen on a desktop and in a taskbar, came out soft.
+
+- The rendered icon was reduced to 256, and that 256 was then handed to Pillow's `.ico`
+  writer, which resized it AGAIN with a filter of its own choosing. Reductions of a
+  reduction. Now each frame is rendered at its own size with 8x supersampling: a 32px icon
+  is a 256px render brought down once.
+- The vector icon used `magick -define icon:auto-resize`, which rasterises once and scales.
+  Being able to draw correctly at any size is the entire point of having a vector source,
+  so each frame is now rasterised from the SVG at that size.
+
+`scripts/icon_ico.py` writes the container directly, because `Image.save(format="ICO")`
+insists on resizing whatever you give it. Writing the 22-byte header by hand is what makes
+"one frame, one source" possible — and the frames are PNG rather than uncompressed BMP,
+which took the vector file from **370 KB to 41 KB** with no loss at all.
 
 ## What actually differs
 
