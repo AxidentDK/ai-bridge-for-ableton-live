@@ -32,26 +32,26 @@
       <stop offset="0.64" stop-color="#2bbdb6"/>
       <stop offset="1.0" stop-color="#0d6a76"/>
     </linearGradient>
-    <linearGradient id="g5" gradientUnits="userSpaceOnUse" x1="85.9" y1="339.1" x2="98.1" y2="372.9">
-      <stop offset="0.0" stop-color="#0f7f88"/>
-      <stop offset="0.18" stop-color="#2ac7c0"/>
-      <stop offset="0.4" stop-color="#c4fff6"/>
-      <stop offset="0.64" stop-color="#2bbdb6"/>
-      <stop offset="1.0" stop-color="#0d6a76"/>
+    <linearGradient id="g5" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0.080" stop-color="#0f7f88"/>
+      <stop offset="0.231" stop-color="#2ac7c0"/>
+      <stop offset="0.416" stop-color="#c4fff6"/>
+      <stop offset="0.618" stop-color="#2bbdb6"/>
+      <stop offset="0.920" stop-color="#0d6a76"/>
     </linearGradient>
-    <linearGradient id="g6" gradientUnits="userSpaceOnUse" x1="261.9" y1="339.1" x2="274.1" y2="372.9">
-      <stop offset="0.0" stop-color="#0f7f88"/>
-      <stop offset="0.18" stop-color="#2ac7c0"/>
-      <stop offset="0.4" stop-color="#c4fff6"/>
-      <stop offset="0.64" stop-color="#2bbdb6"/>
-      <stop offset="1.0" stop-color="#0d6a76"/>
+    <linearGradient id="g6" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0.080" stop-color="#0f7f88"/>
+      <stop offset="0.231" stop-color="#2ac7c0"/>
+      <stop offset="0.416" stop-color="#c4fff6"/>
+      <stop offset="0.618" stop-color="#2bbdb6"/>
+      <stop offset="0.920" stop-color="#0d6a76"/>
     </linearGradient>
-    <linearGradient id="g7" gradientUnits="userSpaceOnUse" x1="377.9" y1="339.1" x2="390.1" y2="372.9">
-      <stop offset="0.0" stop-color="#0f7f88"/>
-      <stop offset="0.18" stop-color="#2ac7c0"/>
-      <stop offset="0.4" stop-color="#c4fff6"/>
-      <stop offset="0.64" stop-color="#2bbdb6"/>
-      <stop offset="1.0" stop-color="#0d6a76"/>
+    <linearGradient id="g7" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0.080" stop-color="#0f7f88"/>
+      <stop offset="0.231" stop-color="#2ac7c0"/>
+      <stop offset="0.416" stop-color="#c4fff6"/>
+      <stop offset="0.618" stop-color="#2bbdb6"/>
+      <stop offset="0.920" stop-color="#0d6a76"/>
     </linearGradient>
   </defs>
   <rect x="16" y="16" width="480" height="480" rx="106" fill="url(#bg)"/>
