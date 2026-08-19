@@ -2,11 +2,18 @@
 
 *(short name: **AI Bridge**)*
 
-> ⚠️ **Work in progress — early public release.**
-> The bridge works today and its test suite is green, but the project is not
-> finished: features are still being added, and details can change between
-> versions. Try it, play with it, tell us what breaks — but don't lean on it in
-> the middle of a deadline session.
+> ## ✅ Version 1.0 — stable, and ready to be relied on.
+> The bridge is feature-complete and its whole test suite is green: **154 tests**, and
+> every tool verified against a running Ableton Live 12.4.3. **62 tools** cover the Live
+> Object Model, and the four generic ones reach **563 operations across 21 object types**
+> — every one listed by name in [docs/LOM_REFERENCE.md](docs/LOM_REFERENCE.md).
+>
+> 1.0 is a promise about the interface, not a claim that nothing will ever be added:
+> the tools and the wire protocol are stable from here, and anything that breaks them
+> gets a major version. Build against it.
+>
+> Tested on **Windows** with Live 12.4. macOS should work and has not been verified —
+> if you run it there, say what happened.
 
 > **More than a connection — let an AI compose, mix, automate, render, and *listen* inside your Live set.**
 
@@ -126,14 +133,39 @@ or any time mid-flow — and you watch it happen in Live. A few things you can s
 You stay in control the whole time — you see and hear every change as it
 happens, you can undo anything in Live, and nothing leaves your computer.
 
+## Which AI? Either. Pick your window.
+
+The bridge does not care which AI is on the other end, but the two connect differently,
+so you get a different window:
+
+| | **Claude** | **Gemini** |
+|---|---|---|
+| Your window | the **Claude desktop app** (or Claude Code) | **Gemini Studio**, included |
+| How it connects | MCP — register the bridge as a server | function calling, built in |
+| What you need | a Claude subscription | a **free** Gemini API key |
+
+**Gemini Studio** is a chat window that ships with the bridge. Paste an API key once and
+Gemini can read your set, search your library by how something *sounds*, audition it, load
+it, write clips and move controls — with every tool call shown as it happens, so you can
+see what it reached for. The installer puts it on your desktop.
+
 ## What you need
 
 1. **Ableton Live 12** (tested on 12.4, Windows — macOS should work, untested).
-2. **This bridge, installed as a Control Surface** (2 minutes, below).
-3. **Something that talks to it** — an AI app that speaks MCP (like Claude
-   Code / Claude Desktop), or a few lines of Python.
+2. **Python 3.10+** — nothing else. No pip packages.
+3. **An AI**: the Claude desktop app, or a free Gemini API key for the Studio window.
 
 ## Install
+
+**Windows — one line.** Paste this into PowerShell. It downloads the bridge, installs it
+into Live, and puts a Gemini Studio icon on your desktop. No admin rights; everything
+lands under your own user profile.
+
+```powershell
+irm https://raw.githubusercontent.com/AxidentDK/ai-bridge-for-ableton-live/main/install.ps1 | iex
+```
+
+**Or by hand** (any platform, or if you would rather read what you run):
 
 1. **Install the bridge into Live** — one command, no dependencies:
    ```bash
@@ -147,6 +179,16 @@ happens, you can undo anything in Live, and nothing leaves your computer.
    *None*).
 3. That's it. The bridge listens on your own computer only
    (`127.0.0.1:8766`) whenever Live is running.
+
+**Then open Gemini Studio** — the desktop icon, or:
+
+```bash
+python tools/gemini_studio.py
+```
+
+First run, choose **Settings → Gemini API key**. The dialog links to Google's page for a
+free one, checks the key before saving it, and stores it in your user profile — outside
+the program's folder, so it cannot be shared or committed by accident.
 
 **Connect an AI via MCP** (Claude Code example):
 

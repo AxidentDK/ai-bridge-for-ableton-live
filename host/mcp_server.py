@@ -17,7 +17,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from client import Bridge, BridgeError  # noqa: E402
 
 SERVER_NAME = "ai-bridge-for-ableton-live"
-SERVER_VERSION = "0.3.0"
+#: One version for both halves. The MCP server and the remote script had drifted to
+#: 0.3.0 and 0.4.0 — two numbers for one program, which tells a user nothing and cannot
+#: answer "are these two ends compatible?". They are released together; they are versioned
+#: together.
+SERVER_VERSION = "1.0.0"
 PROTOCOL_VERSION = "2024-11-05"
 
 
