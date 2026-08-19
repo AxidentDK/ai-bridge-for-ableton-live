@@ -24,8 +24,16 @@ import struct
 
 
 def write_ico(frames, path) -> int:
-    """``frames`` is an iterable of PIL images, each already at its target size."""
-    frames = sorted(frames, key=lambda im: im.size[0])
+    """``frames`` is an iterable of PIL images, each already at its target size.
+
+    LARGEST FIRST, and that is not cosmetic. Plenty of viewers, previewers and thumbnailers
+    show the FIRST entry rather than choosing by size — so an icon written smallest-first
+    is displayed as a 16px image blown up, and looks appalling everywhere except where
+    Windows picks the frame itself. The file was correct and unreadable at the same time:
+    every frame sharp, the one on show sixteen pixels wide. Convention is descending;
+    follow it.
+    """
+    frames = sorted(frames, key=lambda im: im.size[0], reverse=True)
     payloads = []
     for image in frames:
         if image.mode != "RGBA":
