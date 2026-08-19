@@ -15,16 +15,29 @@
 > Tested on **Windows** with Live 12.4. macOS should work and has not been verified —
 > if you run it there, say what happened.
 
-> **More than a connection — let an AI compose, mix, automate, render, and *listen* inside your Live set.**
+> **An AI that can actually use Ableton Live — not just talk about it.**
 
-AI Bridge is a small add-on for Ableton Live. Once it's enabled, an AI
-assistant — or any program you trust — can reach the controls in your Live set:
-write melodies into clips, move faders, change the tempo, load instruments,
-turn knobs. You talk to the AI; the AI does it in Live, while you watch and
-hear everything happen. You keep full control the whole time — nothing leaves
-your computer, and nothing happens behind your back.
+AI Bridge is a small add-on for Live. Once it's enabled, an AI assistant can reach
+your set and *work* it: load the instrument, set the routing, find the sound you
+described, write the clip, move the faders, render the stems, tell you how loud it
+came out. You ask in your own words. It happens in Live, in front of you.
 
-It's free and open source (Apache-2.0).
+**New to music, or new to Live?** Ask for what you want and it will do it — or show
+you where it lives and how it works, which is the part a manual never quite manages.
+The hundred small things that stand between an idea and hearing it stop being in the
+way.
+
+**Been producing for years?** Hand it the jobs you have done a thousand times —
+naming, tidying, routing, comping, stems, loudness checks, hunting for that one
+sample — and keep the part you actually enjoy. It is an assistant, and you decide
+what it does.
+
+And because it can see your set *and* knows the theory, it can help you write when
+you want that. Useful, but not the point: the point is that it can operate the
+instrument you already own.
+
+You keep full control the whole time — nothing leaves your computer, nothing happens
+behind your back, and Ctrl+Z still works. Free and open source (Apache-2.0).
 
 ## Two layers — and you only need the first
 
