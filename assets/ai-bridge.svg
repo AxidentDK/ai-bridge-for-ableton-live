@@ -4,29 +4,31 @@
       <stop offset="0" stop-color="#2b2d30"/>
       <stop offset="1" stop-color="#191a1d"/>
     </linearGradient>
-    <linearGradient id="ink" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="ink" x1="0" y1="0" x2="0.55" y2="1">
       <stop offset="0" stop-color="#9ecdff"/>
-      <stop offset="0.55" stop-color="#5b9cf8"/>
+      <stop offset="0.5" stop-color="#5b9cf8"/>
       <stop offset="1" stop-color="#a5d6a7"/>
     </linearGradient>
   </defs>
   <rect x="16" y="16" width="480" height="480" rx="106" fill="url(#bg)"/>
   <rect x="16" y="16" width="480" height="480" rx="106" fill="none"
         stroke="#3f4247" stroke-width="5"/>
-  <line x1="104.0" y1="372.0" x2="186.0" y2="150.0" stroke="url(#ink)" stroke-width="17.0" stroke-linecap="round"/>
-  <line x1="268.0" y1="372.0" x2="186.0" y2="150.0" stroke="url(#ink)" stroke-width="17.0" stroke-linecap="round"/>
-  <line x1="392.0" y1="372.0" x2="392.0" y2="150.0" stroke="url(#ink)" stroke-width="17.0" stroke-linecap="round"/>
-  <line x1="130.6" y1="300.0" x2="241.4" y2="300.0" stroke="url(#ink)" stroke-width="17.0" stroke-linecap="round"/>
-  <g transform="translate(104.0,372.0)">
-    <ellipse rx="35.0" ry="24.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="17.5" ry="8.0" fill="#1d1e21" transform="rotate(-64)"/>
+  <g transform="translate(-1.9,-17.6) scale(1.0738)">
+  <line x1="129.4" y1="348.7" x2="196.0" y2="132.0" stroke="url(#ink)" stroke-width="19.0" stroke-linecap="round"/>
+  <line x1="305.4" y1="348.7" x2="196.0" y2="132.0" stroke="url(#ink)" stroke-width="19.0" stroke-linecap="round"/>
+  <line x1="421.4" y1="348.7" x2="421.4" y2="132.0" stroke="url(#ink)" stroke-width="19.0" stroke-linecap="round"/>
+  <line x1="148.7" y1="286.0" x2="273.8" y2="286.0" stroke="url(#ink)" stroke-width="19.0" stroke-linecap="round"/>
+  <g transform="translate(92.0,356.0)">
+    <ellipse rx="44.0" ry="29.0" fill="url(#ink)" transform="rotate(-20.0)"/>
+    <ellipse rx="22.0" ry="9.5" fill="#1d1e21" transform="rotate(-62.0)"/>
   </g>
-  <g transform="translate(268.0,372.0)">
-    <ellipse rx="35.0" ry="24.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="17.5" ry="8.0" fill="#1d1e21" transform="rotate(-64)"/>
+  <g transform="translate(268.0,356.0)">
+    <ellipse rx="44.0" ry="29.0" fill="url(#ink)" transform="rotate(-20.0)"/>
+    <ellipse rx="22.0" ry="9.5" fill="#1d1e21" transform="rotate(-62.0)"/>
   </g>
-  <g transform="translate(392.0,372.0)">
-    <ellipse rx="35.0" ry="24.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="17.5" ry="8.0" fill="#1d1e21" transform="rotate(-64)"/>
+  <g transform="translate(384.0,356.0)">
+    <ellipse rx="44.0" ry="29.0" fill="url(#ink)" transform="rotate(-20.0)"/>
+    <ellipse rx="22.0" ry="9.5" fill="#1d1e21" transform="rotate(-62.0)"/>
+  </g>
   </g>
 </svg>
