@@ -142,12 +142,17 @@ so you get a different window:
 |---|---|---|
 | Your window | the **Claude desktop app** (or Claude Code) | **Gemini Studio**, included |
 | How it connects | MCP — register the bridge as a server | function calling, built in |
-| What you need | a Claude subscription | a **free** Gemini API key |
+| What you need | a Claude subscription | a Gemini API key — free to start |
 
 **Gemini Studio** is a chat window that ships with the bridge. Paste an API key once and
 Gemini can read your set, search your library by how something *sounds*, audition it, load
 it, write clips and move controls — with every tool call shown as it happens, so you can
 see what it reached for. The installer puts it on your desktop.
+
+> ⚠️ **Gemini is limited on the free tier.** It is enough to work a track at a time, but
+> not to hold a whole project in view or to A/B two versions — which is most of what mixing
+> and mastering is. A paid tier lifts that; current limits are in
+> [AI Studio](https://aistudio.google.com/rate-limit).
 
 ## What you need
 
