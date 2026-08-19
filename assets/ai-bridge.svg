@@ -13,92 +13,20 @@
   <rect x="16" y="16" width="480" height="480" rx="106" fill="url(#bg)"/>
   <rect x="16" y="16" width="480" height="480" rx="106" fill="none"
         stroke="#3f4247" stroke-width="5"/>
-  <g transform="translate(88.0,378.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
+  <line x1="104.0" y1="372.0" x2="186.0" y2="150.0" stroke="url(#ink)" stroke-width="17.0" stroke-linecap="round"/>
+  <line x1="268.0" y1="372.0" x2="186.0" y2="150.0" stroke="url(#ink)" stroke-width="17.0" stroke-linecap="round"/>
+  <line x1="392.0" y1="372.0" x2="392.0" y2="150.0" stroke="url(#ink)" stroke-width="17.0" stroke-linecap="round"/>
+  <line x1="130.6" y1="300.0" x2="241.4" y2="300.0" stroke="url(#ink)" stroke-width="17.0" stroke-linecap="round"/>
+  <g transform="translate(104.0,372.0)">
+    <ellipse rx="35.0" ry="24.0" fill="url(#ink)" transform="rotate(-20)"/>
+    <ellipse rx="17.5" ry="8.0" fill="#1d1e21" transform="rotate(-64)"/>
   </g>
-  <g transform="translate(106.0,331.6)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
+  <g transform="translate(268.0,372.0)">
+    <ellipse rx="35.0" ry="24.0" fill="url(#ink)" transform="rotate(-20)"/>
+    <ellipse rx="17.5" ry="8.0" fill="#1d1e21" transform="rotate(-64)"/>
   </g>
-  <g transform="translate(124.0,285.2)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(142.0,238.8)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(160.0,192.4)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(178.0,146.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(196.0,192.4)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(214.0,238.8)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(232.0,285.2)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(250.0,331.6)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(268.0,378.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(140.0,316.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(216.0,316.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(388.0,146.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(388.0,204.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(388.0,262.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(388.0,320.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(388.0,378.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(342.0,146.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(434.0,146.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(342.0,378.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
-  </g>
-  <g transform="translate(434.0,378.0)">
-    <ellipse rx="27.0" ry="18.0" fill="url(#ink)" transform="rotate(-20)"/>
-    <ellipse rx="13.5" ry="6.0" fill="#1d1e21" transform="rotate(-64)"/>
+  <g transform="translate(392.0,372.0)">
+    <ellipse rx="35.0" ry="24.0" fill="url(#ink)" transform="rotate(-20)"/>
+    <ellipse rx="17.5" ry="8.0" fill="#1d1e21" transform="rotate(-64)"/>
   </g>
 </svg>
