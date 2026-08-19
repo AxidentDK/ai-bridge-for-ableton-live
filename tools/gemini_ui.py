@@ -100,8 +100,8 @@ class KeyDialog(tk.Toplevel):
         # the tool being broken mid-session.
         tk.Label(self, bg=BG, fg=DIM, font=body_font, justify="left", wraplength=430,
                  text=("The free tier is limited: fine for a track at a time, not for a "
-                       "whole project or A/B-ing versions. A paid tier lifts "
-                       "that.")).pack(anchor="w", pady=(0, 10))
+                       "whole project or A/B-ing versions. A paid tier is "
+                       "recommended.")).pack(anchor="w", pady=(0, 10))
 
         self.value = tk.StringVar()
         self.field = tk.Entry(self, textvariable=self.value, show="•", width=52,

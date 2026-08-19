@@ -151,7 +151,7 @@ see what it reached for. The installer puts it on your desktop.
 
 > ⚠️ **Gemini is limited on the free tier.** It is enough to work a track at a time, but
 > not to hold a whole project in view or to A/B two versions — which is most of what mixing
-> and mastering is. A paid tier lifts that; current limits are in
+> and mastering is. **A paid tier is recommended**; current limits are in
 > [AI Studio](https://aistudio.google.com/rate-limit).
 
 ## What you need
