@@ -15,6 +15,23 @@ the geometry in one place and every size follows.
 
 The installer uses **`ai-bridge-lit.ico`** and falls back to the flat one if it is absent.
 
+## Transparent, holes included
+
+There is no tile behind the mark — it sits on whatever the desktop is. That made the hole
+in each note head a real question rather than a decoration:
+
+- The **rendered** version already had it right by construction. The hole is SUBTRACTED
+  from the distance field (`max(shape, -hole)`), so it was never painted; it opens onto
+  the background because there is nothing there.
+- The **vector** version painted the hole as an ellipse in the tile's colour, which was
+  invisible against a dark tile and would have become a floating dark disc the moment the
+  tile left. Each head is now one path holding two ellipse subpaths with
+  `fill-rule="evenodd"`, so the hole is cut rather than covered.
+
+The renderer also writes colour at full strength where coverage is partial and lets the
+alpha carry the edge. Multiplying colour by coverage as well would premultiply it, and
+every anti-aliased edge would darken toward black against a light desktop.
+
 ## Every frame is made at its own size
 
 This is the thing most worth keeping. Both files started out built the easy way — render or
