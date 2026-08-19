@@ -96,13 +96,34 @@ def head_gradient(name):
     return name
 
 
+def ellipse_path(rx, ry, rotation_deg=0.0):
+    """One ellipse as a path subpath, centred on the origin.
+
+    Needed because the hole has to be a REAL hole now that there is no background behind
+    it. Two ellipse subpaths in one path with fill-rule="evenodd" cut one from the other;
+    a second <ellipse> filled with the old background colour was fine against a dark tile
+    and becomes a floating dark disc the moment the tile goes.
+
+    An SVG arc takes its own x-axis-rotation, so the rotation lives in the arc rather than
+    in a transform — which keeps the whole head a single fillable path.
+    """
+    th = math.radians(rotation_deg)
+    x0, y0 = -rx * math.cos(th), -rx * math.sin(th)
+    x1, y1 = rx * math.cos(th), rx * math.sin(th)
+    return (f"M {x0:.2f} {y0:.2f} "
+            f"A {rx:.2f} {ry:.2f} {rotation_deg:.1f} 1 0 {x1:.2f} {y1:.2f} "
+            f"A {rx:.2f} {ry:.2f} {rotation_deg:.1f} 1 0 {x0:.2f} {y0:.2f} Z")
+
+
 def head(cx, cy, name):
     gid = head_gradient(name)
-    return (f'  <g transform="translate({cx:.1f},{cy:.1f})">\n'
-            f'    <ellipse rx="{HEAD_RX}" ry="{HEAD_RY}" fill="url(#{gid})" '
-            f'transform="rotate({HEAD_TILT})"/>\n'
-            f'    <ellipse rx="{HOLE_RX}" ry="{HOLE_RY}" fill="{HOLE}" '
-            f'transform="rotate({HOLE_TILT})"/>\n'
+    # Drawn in the head's own frame — translate, then rotate — so the gradient's
+    # object-bounding-box units still run across the MINOR axis. The hole is expressed
+    # relative to that frame, hence the difference of the two tilts.
+    outer = ellipse_path(HEAD_RX, HEAD_RY)
+    inner = ellipse_path(HOLE_RX, HOLE_RY, HOLE_TILT - HEAD_TILT)
+    return (f'  <g transform="translate({cx:.1f},{cy:.1f}) rotate({HEAD_TILT})">\n'
+            f'    <path fill-rule="evenodd" fill="url(#{gid})" d="{outer} {inner}"/>\n'
             f'  </g>\n')
 
 
@@ -148,14 +169,7 @@ print(f"  bounds {bw:.0f} x {bh:.0f} -> scale {scale:.3f}, offset ({dx:+.1f},{dy
 
 svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{W}" viewBox="0 0 {W} {W}">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
-      <stop offset="0" stop-color="#1b2b2e"/>
-      <stop offset="1" stop-color="#0d1618"/>
-    </linearGradient>
 {"".join(gradients)}  </defs>
-  <rect x="16" y="16" width="480" height="480" rx="106" fill="url(#bg)"/>
-  <rect x="16" y="16" width="480" height="480" rx="106" fill="none"
-        stroke="#2c4448" stroke-width="5"/>
   <g transform="translate({dx:.1f},{dy:.1f}) scale({scale:.4f})">
 {body}  </g>
 </svg>

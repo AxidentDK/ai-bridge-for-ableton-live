@@ -1,9 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
-      <stop offset="0" stop-color="#1b2b2e"/>
-      <stop offset="1" stop-color="#0d1618"/>
-    </linearGradient>
     <linearGradient id="g1" gradientUnits="userSpaceOnUse" x1="150.3" y1="238.0" x2="168.3" y2="244.1">
       <stop offset="0.0" stop-color="#0f7f88"/>
       <stop offset="0.18" stop-color="#2ac7c0"/>
@@ -54,25 +50,19 @@
       <stop offset="0.920" stop-color="#0d6a76"/>
     </linearGradient>
   </defs>
-  <rect x="16" y="16" width="480" height="480" rx="106" fill="url(#bg)"/>
-  <rect x="16" y="16" width="480" height="480" rx="106" fill="none"
-        stroke="#2c4448" stroke-width="5"/>
   <g transform="translate(-2.6,-20.8) scale(1.0864)">
   <line x1="122.6" y1="350.0" x2="196.0" y2="132.0" stroke="url(#g1)" stroke-width="19.0" stroke-linecap="round"/>
   <line x1="298.6" y1="350.0" x2="196.0" y2="132.0" stroke="url(#g2)" stroke-width="19.0" stroke-linecap="round"/>
   <line x1="414.6" y1="350.0" x2="414.6" y2="132.0" stroke="url(#g3)" stroke-width="19.0" stroke-linecap="round"/>
   <line x1="144.2" y1="286.0" x2="268.5" y2="286.0" stroke="url(#g4)" stroke-width="19.0" stroke-linecap="round"/>
-  <g transform="translate(92.0,356.0)">
-    <ellipse rx="44.0" ry="29.0" fill="url(#g5)" transform="rotate(-20.0)"/>
-    <ellipse rx="22.0" ry="9.5" fill="#0c1a1c" transform="rotate(-62.0)"/>
+  <g transform="translate(92.0,356.0) rotate(-20.0)">
+    <path fill-rule="evenodd" fill="url(#g5)" d="M -44.00 -0.00 A 44.00 29.00 0.0 1 0 44.00 0.00 A 44.00 29.00 0.0 1 0 -44.00 -0.00 Z M -16.35 14.72 A 22.00 9.50 -42.0 1 0 16.35 -14.72 A 22.00 9.50 -42.0 1 0 -16.35 14.72 Z"/>
   </g>
-  <g transform="translate(268.0,356.0)">
-    <ellipse rx="44.0" ry="29.0" fill="url(#g6)" transform="rotate(-20.0)"/>
-    <ellipse rx="22.0" ry="9.5" fill="#0c1a1c" transform="rotate(-62.0)"/>
+  <g transform="translate(268.0,356.0) rotate(-20.0)">
+    <path fill-rule="evenodd" fill="url(#g6)" d="M -44.00 -0.00 A 44.00 29.00 0.0 1 0 44.00 0.00 A 44.00 29.00 0.0 1 0 -44.00 -0.00 Z M -16.35 14.72 A 22.00 9.50 -42.0 1 0 16.35 -14.72 A 22.00 9.50 -42.0 1 0 -16.35 14.72 Z"/>
   </g>
-  <g transform="translate(384.0,356.0)">
-    <ellipse rx="44.0" ry="29.0" fill="url(#g7)" transform="rotate(-20.0)"/>
-    <ellipse rx="22.0" ry="9.5" fill="#0c1a1c" transform="rotate(-62.0)"/>
+  <g transform="translate(384.0,356.0) rotate(-20.0)">
+    <path fill-rule="evenodd" fill="url(#g7)" d="M -44.00 -0.00 A 44.00 29.00 0.0 1 0 44.00 0.00 A 44.00 29.00 0.0 1 0 -44.00 -0.00 Z M -16.35 14.72 A 22.00 9.50 -42.0 1 0 16.35 -14.72 A 22.00 9.50 -42.0 1 0 -16.35 14.72 Z"/>
   </g>
   </g>
 </svg>

@@ -146,24 +146,20 @@ def render(pixels: int, supersample: int = SUPERSAMPLE) -> Image.Image:
     shade = (0.38 + 0.86 * lambert)[..., None] * ALBEDO
     shade = np.clip(shade + spec[..., None] * 1.15 + rim[..., None] * ALBEDO * 0.42, 0, 1)
 
-    half_n = n / 2.0
-    qx = np.abs(xx - half_n) - (half_n - inset) + corner
-    qy = np.abs(yy - half_n) - (half_n - inset) + corner
-    box = (np.hypot(np.maximum(qx, 0), np.maximum(qy, 0))
-           + np.minimum(np.maximum(qx, qy), 0.0) - corner)
-
-    t = (yy / n)[..., None]
-    bg = BG_TOP * (1 - t) + BG_BOT * t
-    bg = bg + np.clip(1.0 - (yy / (n * 0.45)), 0, 1)[..., None] * 0.035
-
+    # TRANSPARENT: the mark alone, no tile behind it. The hole in each head is already a
+    # real hole — it was SUBTRACTED from the field with max(shape, -hole) — so it opens
+    # onto whatever is behind the icon rather than onto a dark disc, which is what a
+    # painted hole would have become the moment the background left.
+    #
+    # Colour is written at FULL strength everywhere, including where coverage is partial,
+    # and the alpha carries the edge. Multiplying the colour by coverage as well would
+    # premultiply it, and every anti-aliased edge would darken toward black against a
+    # light desktop.
     def coverage(field):
-        return np.clip(0.5 - field, 0.0, 1.0)[..., None]
+        return np.clip(0.5 - field, 0.0, 1.0)
 
-    img = bg * coverage(box)
-    img = img * (1 - coverage(sdf)) + shade * coverage(sdf)
-    alpha = np.clip(coverage(box)[..., 0] + coverage(sdf)[..., 0], 0.0, 1.0)
-
-    rgba = np.concatenate([np.clip(img, 0, 1), alpha[..., None]], axis=2)
+    alpha = coverage(sdf)
+    rgba = np.concatenate([np.clip(shade, 0, 1), alpha[..., None]], axis=2)
     full = Image.fromarray((rgba * 255.0 + 0.5).astype(np.uint8), "RGBA")
     return full.resize((pixels, pixels), Image.LANCZOS)
 
