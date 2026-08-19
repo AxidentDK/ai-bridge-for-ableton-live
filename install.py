@@ -183,7 +183,19 @@ def do_install_m4l(user_library: Path):
     dest = m4l_dest(user_library)
     missing = [n for n in M4L_FILES if not (src / n).is_file()]
     if missing:
-        print(f"skipped Max for Live device (missing in {src}: {', '.join(missing)})")
+        # NOT AN ERROR, and it must not read like one. The BUILT .amxd is deliberately
+        # not published: Max bakes an absolute path into it, so a released copy would
+        # carry the builder's own home directory. Everyone who installs from a download
+        # therefore lands here, and the honest thing is to say what it costs — three
+        # tools out of 62 — rather than print a filename and leave them guessing.
+        print("Max for Live audio tap: not installed (the built device is not shipped).")
+        print("  Everything else works. This only affects live_tap_capture, "
+              "live_tap_status and live_tap_discover —")
+        print("  recording audio from a point INSIDE the device chain. Rendering the "
+              "whole set (live_export)")
+        print("  and stems (live_export_stems) do not need it.")
+        print(f"  To build it yourself you need Max: open {src / 'AgentAudioTap.maxpat'}"
+              " and freeze it as AgentAudioTap.amxd, then run this installer again.")
         return
     dest.mkdir(parents=True, exist_ok=True)
     state = tap_state_dir()
