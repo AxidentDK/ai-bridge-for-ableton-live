@@ -60,6 +60,21 @@ class MCP:
         self.proc.wait(timeout=5)
 
 
+def test_the_two_halves_report_the_same_version():
+    """The remote script and the MCP server ship together, so they version together.
+
+    They had drifted to 0.4.0 and 0.3.0 — two numbers for one program, which tells a user
+    nothing and cannot answer the only question a version is asked here: does the remote
+    script inside Live match the host talking to it? Nothing asserted they agreed, which
+    is how they came apart. Now something does.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "host"))
+    import mcp_server                                                  # noqa: PLC0415
+    assert mcp_server.SERVER_VERSION == dispatch.BRIDGE_VERSION, (
+        f"host/mcp_server.py says {mcp_server.SERVER_VERSION} and "
+        f"remote_script/dispatch.py says {dispatch.BRIDGE_VERSION} — they ship together")
+
+
 def test_mcp_end_to_end():
     song = FakeSong()
     song.tempo = 120.0
@@ -173,12 +188,19 @@ if __name__ == "__main__":
         traceback.print_exc()
         failures += 1
     try:
+        test_the_two_halves_report_the_same_version()
+        print("  PASS  test_the_two_halves_report_the_same_version")
+    except Exception:
+        print("  FAIL  test_the_two_halves_report_the_same_version")
+        traceback.print_exc()
+        failures += 1
+    try:
         test_mcp_end_to_end()
         print("  PASS  test_mcp_end_to_end")
     except Exception:
         print("  FAIL  test_mcp_end_to_end")
         traceback.print_exc()
         failures += 1
-    print(f"\n{2 - failures}/2 passed")
+    print(f"\n{3 - failures}/3 passed")
     if failures:
         sys.exit(1)

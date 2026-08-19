@@ -65,20 +65,16 @@ AGENTS.md
 # Gemini review transcripts — may quote source and are not part of the project.
 gemini_reviews/
 
-# GEMINI DEVELOPMENT TOOLING — kept LOCAL, never published (Kim, 2026-08-18).
-# A second model driving the bridge is how WE develop and test it; it is not part of
-# the program a user installs, and it needs an API key nobody else has. Same reasoning
-# as the agent-instruction files above.
+# GEMINI: WHAT SHIPS AND WHAT DOES NOT.
 #
-# The first four were tracked before this rule and were removed from HEAD on 2026-08-19.
-# ⚠️ That does NOT erase them from history — they remain in earlier commits, and taking
-# them out of history would need a force-push, which rewrites published history.
+# The bridge speaks MCP, so a Claude user already has a window — the Claude desktop app.
+# A Gemini user had nothing, because Gemini reaches the bridge through function calling
+# rather than MCP. So Gemini Studio SHIPS: it is the second front end, and the reason
+# gemini_studio.py, gemini_tools.py, gemini_ui.py and gemini_client.py are all tracked.
+#
+# What stays local is the DEVELOPMENT tooling — the peer-review chat and the CLI driver.
+# They are how this project is built, not part of what anyone installs.
 /tools/ask_gemini.py
 /tools/gemini_chat.py
-/tools/gemini_client.py
-/tests/test_gemini_client.py
-/tools/gemini_tools.py
 /tools/gemini_drive.py
-/tools/gemini_studio.py
-/tests/test_gemini_tools.py
 /docs/GEMINI_TOOLS.md
