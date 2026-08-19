@@ -109,7 +109,11 @@ Step "Creating the Gemini Studio icon"
 $pythonw = Join-Path (Split-Path $py -Parent) 'pythonw.exe'
 if (-not (Test-Path $pythonw)) { $pythonw = $py }
 $studio  = Join-Path $target 'tools\gemini_studio.py'
-$iconSrc = Join-Path $target 'assets\ai-bridge.ico'
+# Two icons ship — a rendered one and a vector one; see assets/README.md. The rendered one
+# is the default, and the fallback means an icon-less install still gets a working
+# shortcut rather than failing over decoration.
+$iconSrc = Join-Path $target 'assets\ai-bridge-lit.ico'
+if (-not (Test-Path $iconSrc)) { $iconSrc = Join-Path $target 'assets\ai-bridge-flat.ico' }
 
 $desktop  = [Environment]::GetFolderPath('Desktop')
 $linkPath = Join-Path $desktop 'Gemini Studio (Ableton).lnk'
