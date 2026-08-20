@@ -579,8 +579,10 @@ TOOLS = [
          "clear_first": {"type": "boolean"},
      }, ["clip_path", "parameter_path"])},
     {"name": "live_show_view",
-     "description": ("Switch Live's main view. name = Arranger | Session | Browser | "
-                     "Detail | Detail/Clip | Detail/DeviceChain."),
+     "description": ("Switch Live's main view and confirm it switched. name = Arranger | "
+                     "Session | Browser | Detail | Detail/Clip | Detail/DeviceChain. "
+                     "Case-insensitive, and 'Arrangement' (what Live's UI calls it) is "
+                     "accepted for 'Arranger'."),
      "inputSchema": _schema({"name": {"type": "string"}}, ["name"])},
     {"name": "live_cleanup_tracks",
      "description": ("Delete unused tracks from the set — a track with NO clips (session or "
@@ -890,8 +892,10 @@ def run_tool(name: str, args: dict):
             bool(args.get("clear_first", True)))
     if name == "live_show_view":
         from api import Live
-        Live(b).show_view(args["name"])
-        return f"showing {args['name']}"
+        # Report the name Live actually applied, not the one that was asked for — they
+        # differ whenever an alias or a casing was resolved, and the caller should see
+        # what happened rather than an echo of its own request.
+        return f"showing {Live(b).show_view(args['name'])}"
     raise ValueError(f"unknown tool {name!r}")
 
 

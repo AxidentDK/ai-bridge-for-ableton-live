@@ -1380,7 +1380,8 @@ class Live:
         cat, item_path, found_name = hit
 
         if track is not None:
-            before = len(self.b.get(f"live_set tracks {track}", "devices") or [])
+            before = [d.get("name") for d in
+                      (self.b.get(f"live_set tracks {track}", "devices") or [])]
             self.b.set("live_set view", "selected_track",
                        {"$path": f"live_set tracks {track}"})
         else:
@@ -1392,15 +1393,25 @@ class Live:
         out = {"loaded": True, "name": found_name, "category": cat,
                "matched": "exact" if exact else "substring"}
         if track is not None:
-            devices = self.b.get(f"live_set tracks {track}", "devices") or []
+            after = [d.get("name") for d in
+                     (self.b.get(f"live_set tracks {track}", "devices") or [])]
             out["track"] = track
-            out["devices"] = [d.get("name") for d in devices]
+            out["devices"] = after
             out["verified"] = True
-            if len(devices) <= before:
+            # Verify by IDENTITY, not by arithmetic. Loading an instrument onto a track
+            # that already has one REPLACES it, so the device count is unchanged and a
+            # count test calls a perfect swap a failure — which is exactly what the
+            # headline gesture of the demo does (909 -> 707). What the caller asked for
+            # is "this device is on this track", so that is what gets checked: the item
+            # is present by name, or the device list changed at all.
+            stem = found_name.rsplit(".", 1)[0].strip().lower()
+            present = any((n or "").strip().lower() == stem for n in after)
+            if not present and after == before:
                 out["loaded"] = False
                 out["error"] = (
-                    "the browser reported no error but the track's device count did "
-                    "not change — the item may not be loadable onto this track type")
+                    "the browser reported no error but the track's devices are "
+                    f"unchanged ({after or 'none'}) and no device named {found_name!r} "
+                    "appeared — the item may not be loadable onto this track type")
         else:
             # WITHOUT a track there is nothing to compare, so `loaded` is the browser's
             # word rather than an observation — and the device landed on whatever track
@@ -1757,10 +1768,45 @@ class Live:
         self.b.set(f"live_set tracks {track} mixer_device volume", "value", float(value))
 
     # --- views ---------------------------------------------------------------------------
-    def show_view(self, name: str):
-        """Switch a main view. Names: 'Arranger', 'Session', 'Browser',
-        'Detail', 'Detail/Clip', 'Detail/DeviceChain'."""
-        self.b.call("live_app view", "show_view", name)
+    #: Live's own view names. Case-sensitive, and NOT what the UI calls them — the UI says
+    #: "Arrangement", the API wants "Arranger".
+    VIEWS = ("Browser", "Arranger", "Session", "Detail", "Detail/Clip",
+             "Detail/DeviceChain")
+
+    #: What people and models actually say, mapped to what Live accepts. "arrangement" is
+    #: the one that matters: it is the word printed in Live's own UI.
+    _VIEW_ALIASES = {"arrangement": "Arranger", "arrange": "Arranger",
+                     "clip": "Detail/Clip", "device": "Detail/DeviceChain",
+                     "devicechain": "Detail/DeviceChain", "device_chain": "Detail/DeviceChain"}
+
+    @classmethod
+    def view_name(cls, name: str) -> str:
+        """Resolve a spoken view name to the exact string Live accepts, or raise."""
+        key = str(name).strip().replace(" ", "").replace("view", "").lower()
+        for canonical in cls.VIEWS:
+            if canonical.lower().replace("/", "") == key.replace("/", ""):
+                return canonical
+        if key in cls._VIEW_ALIASES:
+            return cls._VIEW_ALIASES[key]
+        raise ValueError(f"unknown view {name!r}. Live accepts: {', '.join(cls.VIEWS)} "
+                         "(case matters; the UI's 'Arrangement' is 'Arranger' here)")
+
+    def show_view(self, name: str) -> str:
+        """Switch a main view, and CONFIRM it switched. Returns the name applied.
+
+        Live's ``show_view`` silently ignores a name it does not recognise — no return
+        value, no exception, nothing moves. Reporting that as success is the worst kind
+        of lie a tool can tell: 'arranger' in place of 'Arranger' looked like it worked
+        and left the view where it was. So the name is resolved first, and the result is
+        read back from Live rather than assumed.
+        """
+        canonical = self.view_name(name)
+        self.b.call("live_app view", "show_view", canonical)
+        if not self.is_view_visible(canonical):
+            raise RuntimeError(f"asked Live for the {canonical} view and it did not "
+                               "switch — the view may be unavailable in this window "
+                               "layout")
+        return canonical
 
     def show_arranger(self):
         self.show_view("Arranger")
