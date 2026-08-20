@@ -253,7 +253,30 @@ def decode_args(name: str, args: dict, stringified: dict) -> dict:
         except ValueError as exc:
             raise ValueError(f"{name}: parameter "
                              f"{'.'.join(path) or '<root>'}: {exc}") from None
-    return out
+    # The other half of the ``$ref`` rename: the model hands back the ``ref`` it was
+    # shown, and the bridge only understands ``$ref``. Done AFTER decoding, so a ref
+    # inside a stringified parameter is a dict by the time we get to it. No bridge
+    # schema has a parameter named "ref", so nothing legitimate is caught by this.
+    return _rename_key(out, _REF_SAFE, _REF)
+
+
+#: Gemini reads ``$ref`` inside a ``functionResponse`` as a reference to an attached file
+#: part, and rejects the whole request with HTTP 400 when the name matches no part —
+#: ANYWHERE in the payload, nested and inside lists included (measured, all three).
+#: ``lom.serialize`` stamps ``$ref`` on every Live object, so left alone this breaks any
+#: tool that returns one: ``live_resolve``, and every ``live_get`` of an object-valued
+#: property. Renamed on the way out and restored on the way in, so the bridge keeps its
+#: own vocabulary and only the Gemini wire format is bent. Claude, over MCP, sees ``$ref``.
+_REF, _REF_SAFE = "$ref", "ref"
+
+
+def _rename_key(value, frm: str, to: str):
+    """Rename one key, at every depth, leaving everything else untouched."""
+    if isinstance(value, dict):
+        return {(to if k == frm else k): _rename_key(v, frm, to) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_rename_key(v, frm, to) for v in value]
+    return value
 
 
 def function_calls(content: dict) -> list:
@@ -272,7 +295,11 @@ def response_part(call: dict, payload: dict) -> dict:
     The id is what maps an answer back to its question when several calls are in flight.
     It is conditional because it is not always present, and sending ``"id": null`` is not
     the same as omitting the field.
+
+    Every result passes through here, which is why the ``$ref`` rename lives here too:
+    one choke point, so a tool added later cannot forget it.
     """
+    payload = _rename_key(payload, _REF, _REF_SAFE)
     response = {"functionResponse": {"name": call.get("name"), "response": payload}}
     if call.get("id") is not None:
         response["functionResponse"]["id"] = call["id"]
