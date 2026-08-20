@@ -314,6 +314,32 @@ def test_a_ref_handed_back_by_the_model_is_restored_for_the_bridge():
     assert seen == [{"a": {"$ref": "live_set tracks 1"}}], seen
 
 
+def test_an_array_encoded_as_one_string_decodes_as_well_as_per_element_strings():
+    """"Supply as a JSON-encoded string" has two fair readings for an array — encode each
+    element, or encode the whole thing — and Gemini has produced both. The second used to
+    fall through as a bare str and raise "'str' object has no attribute 'get'" inside the
+    bridge, mid-run, on live_edit_notes."""
+    _, stringified = T.to_declarations(mcp_server.TOOLS)
+    want = [{"note_id": 1, "velocity": 90}, {"note_id": 2, "velocity": 80}]
+    for label, edits in (
+            ("per-element strings", [json.dumps(e) for e in want]),
+            ("whole array as one string", json.dumps(want)),
+            ("real objects", want)):
+        out = T.decode_args("live_edit_notes",
+                            {"clip_path": "c", "edits": edits}, stringified)
+        assert out["edits"] == want, f"{label} -> {out['edits']!r}"
+
+
+def test_a_string_that_is_not_json_in_an_array_slot_names_the_parameter():
+    _, stringified = T.to_declarations(mcp_server.TOOLS)
+    try:
+        T.decode_args("live_edit_notes", {"clip_path": "c", "edits": "not json"},
+                      stringified)
+        assert False, "malformed JSON must not pass silently"
+    except ValueError as exc:
+        assert "edits" in str(exc), exc
+
+
 def _run() -> int:
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
