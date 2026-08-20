@@ -13,6 +13,13 @@ from __future__ import annotations
 
 from .lom import LomError, resolve
 
+#: Quoted back in every note error, because the caller is usually a model and the error
+#: text is the only documentation it gets to read at the moment it is wrong.
+_NOTE_SHAPE = ('Each note must be an object: {"pitch": 36, "start_time": 0.0, '
+               '"duration": 0.25, "velocity": 100}. pitch is a MIDI number, start_time '
+               'and duration are in BEATS, velocity 1-127 and optional. Not a string, '
+               'not a list of values.')
+
 # sensible whole-clip defaults for get: all pitches, a very long time span
 _ALL_PITCH_FROM = 0
 _ALL_PITCH_SPAN = 128
@@ -61,7 +68,7 @@ def add_notes(roots: dict, path: str, notes: list, spec_factory) -> int:
     """Add notes (list of dicts) to a MIDI clip. Returns the count added."""
     clip = _require_clip(roots, path)
     if not isinstance(notes, list) or not notes:
-        raise LomError("bad_request", "notes must be a non-empty list")
+        raise LomError("bad_request", "notes must be a non-empty list. " + _NOTE_SHAPE)
     specs = []
     for i, d in enumerate(notes):
         try:
@@ -73,7 +80,14 @@ def add_notes(roots: dict, path: str, notes: list, spec_factory) -> int:
                 mute=bool(d.get("mute", False)),
             )
         except (KeyError, TypeError, ValueError) as exc:
-            raise LomError("bad_request", f"invalid note at index {i}: {exc}")
+            # The message has to SAY THE SHAPE. A caller that gets this wrong is usually
+            # a model, and its only way to recover is the error text: measured against
+            # Gemini, a bare "'pitch'" produced fifteen consecutive wrong guesses — note
+            # as a string, as a list, as a dict without the key — and the run never
+            # recovered. Naming the shape and echoing what arrived fixes it in one turn.
+            raise LomError("bad_request",
+                           "invalid note at index %d: %s. %s Received %s: %.80r"
+                           % (i, exc, _NOTE_SHAPE, type(d).__name__, d))
         specs.append(spec)
     clip.add_new_notes(tuple(specs))
     return len(specs)

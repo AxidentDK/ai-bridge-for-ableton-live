@@ -289,6 +289,31 @@ def test_a_subset_hides_the_tools_not_asked_for():
     assert set(stringified) == {"live_find_sound", "live_ping"}
 
 
+def test_a_ref_is_renamed_at_every_depth_because_gemini_rejects_the_dollar_form():
+    """Measured against the real API: ``$ref`` 400s nested and in lists, not just at the
+    top level. ``lom.serialize`` puts it on every Live object, so a shallow scrub would
+    still take out ``live_get`` of an object-valued property."""
+    result = {"$ref": "live_set tracks 0", "type": "Track",
+              "devices": [{"$ref": "live_set tracks 0 devices 0", "type": "Device"}],
+              "view": {"selected": {"$ref": "live_set tracks 0 clip_slots 2"}}}
+    script = _Script(_calls(("t", {"a": "x"})), _text("ok"))
+    T.drive("go", "k", run_tool=lambda n, a: result, tools=_ONE_ARG, post=script)
+    sent = script.bodies[1]["contents"][2]["parts"][0]["functionResponse"]["response"]
+    assert "$ref" not in json.dumps(sent), sent
+    assert sent["ref"] == "live_set tracks 0"
+    assert sent["devices"][0]["ref"] == "live_set tracks 0 devices 0"
+    assert sent["view"]["selected"]["ref"] == "live_set tracks 0 clip_slots 2"
+
+
+def test_a_ref_handed_back_by_the_model_is_restored_for_the_bridge():
+    """The rename has to survive the round trip: the model echoes the ``ref`` it was
+    shown, and ``lom.coerce`` only resolves ``$ref``."""
+    seen = []
+    script = _Script(_calls(("t", {"a": {"ref": "live_set tracks 1"}})), _text("ok"))
+    T.drive("go", "k", run_tool=lambda n, a: seen.append(a), tools=_ONE_ARG, post=script)
+    assert seen == [{"a": {"$ref": "live_set tracks 1"}}], seen
+
+
 def _run() -> int:
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

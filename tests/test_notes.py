@@ -113,6 +113,21 @@ def test_bad_notes_rejected():
             assert e.type == "bad_request"
 
 
+def test_a_bad_note_error_states_the_shape_so_the_caller_can_correct_itself():
+    """The caller is usually a model, and this text is all it gets. A bare KeyError
+    ("'pitch'") sent Gemini through fifteen consecutive wrong guesses — note as a
+    string, as a list, as a dict without the key — and the run never recovered."""
+    r = roots()
+    for bad in ([], "nope", [{"pitch": 64}], ["36,0,0.25"], [[36, 0.0, 0.25]]):
+        try:
+            add_notes(r, CLIP, bad, FakeSpec)
+            assert False, f"should reject {bad!r}"
+        except LomError as e:
+            assert e.type == "bad_request"
+            for must in ('"pitch"', '"start_time"', '"duration"', "BEATS"):
+                assert must in e.message, f"{bad!r} -> {e.message}"
+
+
 def test_not_a_clip():
     r = roots()
     try:
