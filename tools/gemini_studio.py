@@ -129,6 +129,7 @@ class StudioWindow:
 
         self._build_menu()
         self._count_tools()
+        self._warm_sidecar()
         self._say("dim",
                   "Gemini has the bridge's tools here — it can read the set, search the "
                   "library by how something SOUNDS, audition, load and play.\n"
@@ -216,6 +217,32 @@ class StudioWindow:
         threading.Thread(target=work, daemon=True).start()
 
     # ---- small helpers -----------------------------------------------------------------
+
+    def _warm_sidecar(self) -> None:
+        """Touch the sound index in the background so the FIRST search is not the slow one.
+
+        Measured: the index is ~480 MB, and the first query after boot spends about 18
+        SECONDS having Windows page it off disk. Warm, the same query is 2-3 seconds. That
+        cost is unavoidable but it does not have to be paid in the middle of an answer —
+        here it happens while the user is still reading the greeting and typing.
+
+        Deliberately silent and deliberately forgiving: the sidecar is optional, and a
+        window that complained on startup about a component the user may not have installed
+        would be worse than the delay it is avoiding.
+        """
+        def work():
+            try:
+                import mcp_server                                     # noqa: PLC0415
+                if not mcp_server.run_tool(
+                        "live_sidecar_status", {}).get("available"):
+                    return
+                # A real query, not just opening the file: the pages that matter are the
+                # ones a search actually reads.
+                mcp_server.run_tool("live_find_sound", {"query": "warm", "limit": 1})
+            except Exception:                                         # noqa: BLE001, S110
+                pass
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _count_tools(self) -> None:
         try:
