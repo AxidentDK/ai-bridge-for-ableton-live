@@ -46,6 +46,7 @@ scratch/
 # Draft announcement copy. Publishing the script for promoting something alongside the
 # thing itself reads badly, and these are drafts to edit, not documentation.
 /docs/LAUNCH.md
+/docs/ACCESSIBILITY.md
 
 # Personal terms for scripts/check_private.py. Kept local ON PURPOSE: a checker that
 # hard-codes your private folder names would publish what it is meant to hide.
