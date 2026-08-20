@@ -229,6 +229,19 @@ def _decode_at(node, path: tuple):
                              f"({exc.msg})") from None
     head, rest = path[0], path[1:]
     if head == ELEMENT:
+        if isinstance(node, str):
+            # The model encoded the WHOLE array as one JSON string instead of encoding
+            # each element separately. Both are fair readings of "supply as a
+            # JSON-encoded string", and Gemini has produced both — the second one
+            # reached the bridge as a bare str and raised
+            # "'str' object has no attribute 'get'" mid-run. Decoding here stays inside
+            # the recorded-paths rule: this path is DECLARED as an array, so a string
+            # arriving in it can only be the array.
+            try:
+                node = json.loads(node)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"expected a JSON-encoded array, got {node[:80]!r} "
+                                 f"({exc.msg})") from None
         if not isinstance(node, list):
             return node
         return [_decode_at(item, rest) for item in node]
