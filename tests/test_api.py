@@ -55,12 +55,25 @@ def make():
 
 
 class RecordingBridge(FakeBridge):
+    """Models Live's views the way Live really behaves: ``show_view`` accepts any
+    argument, applies only the exact names, and reports nothing either way."""
+
     def __init__(self):
         super().__init__([])
         self.calls = []
+        self.visible = "Session"
+        self.deaf = False                  # when True, views stop responding entirely
 
     def call(self, path, func, *args):
         self.calls.append((path, func, args))
+        if func == "show_view" and args[0] in Live.VIEWS and not self.deaf:
+            self.visible = args[0]         # a name it does not know is a SILENT no-op
+        if func == "is_view_visible":
+            return args[0] == self.visible
+        return None
+
+    def switches(self):
+        return [a[0] for p, f, a in self.calls if f == "show_view"]
 
 
 def test_view_switch_helpers():
@@ -69,11 +82,7 @@ def test_view_switch_helpers():
     live.show_arranger()
     live.show_session()
     live.show_view("Detail/Clip")
-    assert b.calls == [
-        ("live_app view", "show_view", ("Arranger",)),
-        ("live_app view", "show_view", ("Session",)),
-        ("live_app view", "show_view", ("Detail/Clip",)),
-    ]
+    assert b.switches() == ["Arranger", "Session", "Detail/Clip"]
 
 
 def test_unused_detection():
@@ -257,6 +266,97 @@ def test_print_sequence_routes_records_reads():
     assert b.log.index(fired[0]) < b.log.index(
         next(e for e in b.log if e[0] == "set" and e[2] == "record_mode"
              and e[3] is True))
+
+
+def test_a_view_name_is_resolved_to_what_live_actually_accepts():
+    """Live's UI says "Arrangement"; its API wants "Arranger" and ignores anything else
+    without complaint. Typing the wrong one switched nothing and still reported success."""
+    for spoken in ("Arranger", "arranger", "ARRANGER", "arrangement", "Arrangement view"):
+        assert Live.view_name(spoken) == "Arranger", spoken
+    assert Live.view_name("session") == "Session"
+    assert Live.view_name("Detail/Clip") == "Detail/Clip"
+    assert Live.view_name("clip") == "Detail/Clip"
+    try:
+        Live.view_name("nonsense")
+        assert False, "an unknown view must not be silently accepted"
+    except ValueError as exc:
+        assert "Arranger" in str(exc), "the error has to list what IS accepted"
+
+
+def test_a_view_that_does_not_switch_raises_instead_of_claiming_success():
+    """The bug this exists for: 'arranger' for 'Arranger' left the view where it was and
+    the tool still answered "showing arranger". Found by looking at the screen, which is
+    the only way it could have been found."""
+    b = RecordingBridge()
+    assert Live(b).show_view("arrangement") == "Arranger"
+    assert b.visible == "Arranger"
+    b.deaf = True                          # Live accepts the call and nothing moves
+    try:
+        Live(b).show_view("Session")
+        assert False, "a view that did not switch must raise, not report success"
+    except RuntimeError as exc:
+        assert "did not switch" in str(exc)
+
+
+class FakeLoadBridge:
+    """A track whose device list changes (or does not) when the browser loads an item."""
+
+    def __init__(self, devices, becomes):
+        self.devices = list(devices)
+        self.becomes = becomes                 # what the track holds after load_item
+
+    def get(self, path, prop):
+        return [{"name": n} for n in self.devices] if prop == "devices" else None
+
+    def set(self, *args, **kwargs):
+        return None
+
+    def call(self, path, func, *args):
+        if func == "load_item":
+            self.devices = list(self.becomes)
+        return None
+
+    def batch(self, requests):
+        # An empty browser tree: the index below supplies the match, and the live walk
+        # that follows a SUBSTRING hit must find nothing rather than crash.
+        return [{"ok": True, "result": []} for _ in requests]
+
+
+def _load(devices, becomes, name="707 Core Kit"):
+    live = Live(FakeLoadBridge(devices, becomes))
+    live._load_browser_index = lambda: {                      # noqa: SLF001
+        "categories": {"drums": [{"name": f"{name}.adg", "path": "browser drums 0",
+                                  "loadable": True}]}}
+    return live.load_device(name, track=0)
+
+
+def test_replacing_an_instrument_is_a_successful_load_not_a_failure():
+    """Loading an instrument onto a track that has one REPLACES it, so the device count
+    is unchanged. The old check counted devices and called the 909 -> 707 swap — the
+    headline gesture of the demo — a failure, while the swap had in fact worked."""
+    out = _load(["909 Core Kit"], ["707 Core Kit"])
+    assert out["loaded"] is True, out
+    assert "error" not in out, out
+    assert out["devices"] == ["707 Core Kit"]
+
+
+def test_loading_onto_an_empty_track_still_verifies():
+    out = _load([], ["707 Core Kit"])
+    assert out["loaded"] is True and out["devices"] == ["707 Core Kit"]
+
+
+def test_a_load_that_changes_nothing_is_still_reported_as_a_failure():
+    """The check this replaced was there for a reason — an instrument dropped on an audio
+    track silently does nothing — so identity must not become a way of passing everything."""
+    out = _load([], [])
+    assert out["loaded"] is False
+    assert "707 Core Kit.adg" in out["error"], out["error"]
+
+
+def test_the_requested_device_already_being_there_counts_as_loaded():
+    """Deliberate: the caller asked for "this device on this track", and it is. Recorded
+    as a decision rather than left to be rediscovered as a surprise."""
+    assert _load(["707 Core Kit"], ["707 Core Kit"])["loaded"] is True
 
 
 if __name__ == "__main__":
