@@ -301,12 +301,17 @@ def test_a_view_that_does_not_switch_raises_instead_of_claiming_success():
 class FakeLoadBridge:
     """A track whose device list changes (or does not) when the browser loads an item."""
 
-    def __init__(self, devices, becomes):
+    def __init__(self, devices, becomes, browser=None):
         self.devices = list(devices)
         self.becomes = becomes                 # what the track holds after load_item
+        self.browser = dict(browser or {})     # positional path -> name living there NOW
 
     def get(self, path, prop):
-        return [{"name": n} for n in self.devices] if prop == "devices" else None
+        if prop == "devices":
+            return [{"name": n} for n in self.devices]
+        if prop == "name":
+            return self.browser.get(path)
+        return None
 
     def set(self, *args, **kwargs):
         return None
@@ -322,10 +327,14 @@ class FakeLoadBridge:
         return [{"ok": True, "result": []} for _ in requests]
 
 
-def _load(devices, becomes, name="707 Core Kit"):
-    live = Live(FakeLoadBridge(devices, becomes))
+def _load(devices, becomes, name="707 Core Kit", holds=None):
+    """`holds` is what the cached browser path ACTUALLY contains now — it defaults to
+    the indexed item, i.e. a fresh index. Pass something else to simulate a stale one."""
+    item = f"{name}.adg"
+    live = Live(FakeLoadBridge(devices, becomes,
+                               browser={"browser drums 0": item if holds is None else holds}))
     live._load_browser_index = lambda: {                      # noqa: SLF001
-        "categories": {"drums": [{"name": f"{name}.adg", "path": "browser drums 0",
+        "categories": {"drums": [{"name": item, "path": "browser drums 0",
                                   "loadable": True}]}}
     return live.load_device(name, track=0)
 
@@ -357,6 +366,29 @@ def test_the_requested_device_already_being_there_counts_as_loaded():
     """Deliberate: the caller asked for "this device on this track", and it is. Recorded
     as a decision rather than left to be rediscovered as a surprise."""
     assert _load(["707 Core Kit"], ["707 Core Kit"])["loaded"] is True
+
+
+def test_a_stale_index_path_refuses_rather_than_loading_the_wrong_plugin():
+    """Field-hit 2026-08-26. Browser paths are positional, so installing a plugin
+    renumbers a folder's children and every cached path below it now points one slot
+    off. The index said Opus sat at East West's slot 0; EW Spaces II was there, and it
+    loaded — reporting matched="exact", verified=true. The cached path must be confirmed
+    against the live tree before it is used."""
+    try:
+        out = _load([], ["EW Spaces II"], name="Opus", holds="EW Spaces II")
+    except ValueError:
+        return                      # refused to guess — correct
+    raise AssertionError(f"loaded from a stale index path instead of refusing: {out}")
+
+
+def test_landing_a_device_of_another_name_is_not_reported_as_verified():
+    """The wrong-item load passed the old check because it only fired when the device
+    list was UNCHANGED — anything landing counted as success. A preset legitimately
+    arrives under another name, so this is not a failure, but it must not read clean."""
+    out = _load([], ["EW Spaces II"], name="Opus")
+    assert out["loaded"] is True
+    assert out["verified"] is False
+    assert "Opus" in out["warning"], out["warning"]
 
 
 if __name__ == "__main__":

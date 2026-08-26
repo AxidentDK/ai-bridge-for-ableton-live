@@ -1243,6 +1243,18 @@ class Live:
                 "items": total, "max_depth": int(max_depth),
                 "seconds": index["build_seconds"]}
 
+    def _browser_item_named(self, path: str, name: str) -> bool:
+        """Does the browser item at this positional path still carry this name?
+
+        Browser paths are indices into a list Live renumbers as plugins come and go,
+        so a cached path is a guess until it is confirmed against the live tree.
+        """
+        try:
+            actual = self.b.get(path, "name")
+        except Exception:
+            return False
+        return str(actual or "").strip().lower() == str(name).strip().lower()
+
     def _load_browser_index(self) -> dict | None:
         try:
             with open(self.browser_index_path(), "r", encoding="utf-8") as fh:
@@ -1344,6 +1356,18 @@ class Live:
                 if exact:
                     break
 
+        # A cached path is POSITIONAL — "… children 8 children 0" — and Live renumbers a
+        # folder's children whenever a plugin is installed or removed. A stale entry
+        # therefore still RESOLVES, just to the wrong item, so the index cannot be trusted
+        # without asking what actually sits there now. Field-hit 2026-08-26: the index had
+        # Opus at East West's slot 0, where EW Spaces II had since landed, and the wrong
+        # plugin loaded while the result read matched="exact", verified=true.
+        stale_index = False
+        if exact and not self._browser_item_named(exact[1], exact[2]):
+            exact, stale_index = None, True
+        if loose and not self._browser_item_named(loose[1], loose[2]):
+            loose, stale_index = None, True
+
         # Breadth-first, because the interesting items are not all at the top:
         # `plugins` opens on VENDOR FOLDERS, so a top-level-only search finds the
         # folder "Vital Audio" and never the plugin inside it (field-hit
@@ -1392,6 +1416,12 @@ class Live:
 
         out = {"loaded": True, "name": found_name, "category": cat,
                "matched": "exact" if exact else "substring"}
+        if stale_index:
+            out["index_stale"] = True
+            out["index_note"] = (
+                "the cached browser index pointed at an item other than the one it "
+                "recorded, so it was ignored and the browser was walked live. Rebuild "
+                "it with live_browser_index refresh=true")
         if track is not None:
             after = [d.get("name") for d in
                      (self.b.get(f"live_set tracks {track}", "devices") or [])]
@@ -1412,6 +1442,18 @@ class Live:
                     "the browser reported no error but the track's devices are "
                     f"unchanged ({after or 'none'}) and no device named {found_name!r} "
                     "appeared — the item may not be loadable onto this track type")
+            elif not present:
+                # Something landed, but not what was asked for. That is not always wrong
+                # — an .adv preset for Analog arrives as a device called "Analog" — so it
+                # is not called a failure. But it is also exactly what loading the WRONG
+                # item looks like, and the old test passed that silently because it only
+                # fired when the device list was UNCHANGED.
+                out["verified"] = False
+                out["warning"] = (
+                    f"no device named {found_name!r} is on track {track} after the load "
+                    f"({before or 'none'} -> {after}). Either the item is a preset that "
+                    "loads under a different device name, or the browser resolved to a "
+                    "different item than the one requested — check before relying on it")
         else:
             # WITHOUT a track there is nothing to compare, so `loaded` is the browser's
             # word rather than an observation — and the device landed on whatever track
