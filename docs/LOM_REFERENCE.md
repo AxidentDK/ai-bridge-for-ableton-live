@@ -11,6 +11,8 @@
 
 You do not need this page to use the bridge — ask in plain language and the assistant picks the tool. It is here so you can see the coverage is the whole object model rather than a curated subset, and to check whether something specific is reachable. The named tools in [TOOLS.md](TOOLS.md) are an ergonomic layer over this, not a limit on it.
 
+This page lists *what* is reachable. For the handful of operations where the naming misleads or the call order matters — passing object handles to `live_call`, trimming arrangement clips — see [LOM_RECIPES.md](LOM_RECIPES.md).
+
 ### How this was counted
 
 Read from a running **Ableton Live 12.4.3** by walking the object graph with `live_children` — 713 paths — not copied from a manual. Another Live version will differ.
