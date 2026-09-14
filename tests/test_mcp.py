@@ -74,6 +74,15 @@ def test_the_two_halves_report_the_same_version():
         f"host/mcp_server.py says {mcp_server.SERVER_VERSION} and "
         f"remote_script/dispatch.py says {dispatch.BRIDGE_VERSION} — they ship together")
 
+    # The package version drifted the same way: v1.0.0 was tagged and both halves said
+    # 1.0.0, but pyproject.toml still said 0.6.0 — so pip reported the wrong release.
+    import tomllib                                                     # noqa: PLC0415
+    with open(os.path.join(ROOT, "pyproject.toml"), "rb") as fh:
+        package_version = tomllib.load(fh)["project"]["version"]
+    assert package_version == dispatch.BRIDGE_VERSION, (
+        f"pyproject.toml says {package_version} but the bridge says "
+        f"{dispatch.BRIDGE_VERSION} — the installed package must report the real release")
+
 
 def test_mcp_end_to_end():
     song = FakeSong()
