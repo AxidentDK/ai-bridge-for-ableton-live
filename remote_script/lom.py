@@ -81,6 +81,12 @@ def get(roots: dict, path: str, prop: str):
     try:
         value = getattr(obj, prop)
     except AttributeError:
+        # Live's collections (tracks, devices, clip_slots …) are Vectors with no length
+        # attribute, and "how many?" is the first thing anyone asks one. A model reaches
+        # for `length` (seen twice in a row, 2026-09-19); answer it instead of refusing.
+        if prop in ("length", "count", "len", "size") and not isinstance(obj, (str, bytes)) \
+                and hasattr(obj, "__iter__"):
+            return len(list(obj))
         raise LomError("no_such_property", f"{_typename(obj)} has no property {prop!r}")
     return serialize(value)
 
