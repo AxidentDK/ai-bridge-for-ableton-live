@@ -42,6 +42,7 @@ Stdlib only, like everything else here.
 """
 from __future__ import annotations
 
+import itertools
 import json
 from pathlib import Path
 
@@ -326,6 +327,7 @@ def _text_of(content: dict) -> str:
 
 STOPPED_BY_USER = "stopped by you"
 PAUSED = "paused after"
+STUCK = "seems stuck"
 
 #: Sent when the step cap is reached, with tool calls switched off for that one answer.
 #: The cap used to end the run with nothing said, which left a half-built set and no
@@ -334,11 +336,24 @@ PAUSE_PROMPT = ("[You have used {n} rounds of tool calls, so this is a check-in,
                 "end. Do not call any tools now. Say briefly what you have done so far, "
                 "what is still left, and stop. The producer will tell you to continue.]")
 
+#: The intelligent guard, for callers with no round cap. A five-minute orchestral piece
+#: and a runaway loop look identical to a round counter; only one of them makes the SAME
+#: call with the SAME arguments round after round. Three in a row is that.
+STUCK_AFTER = 3
+STUCK_PROMPT = ("[You have made the identical call {call} in {n} consecutive rounds, so "
+                "you seem to be going in circles. Do not call any tools now. Say what you "
+                "were trying to do and what is in the way; the producer will decide.]")
+
 
 def drive(task, key, *, run_tool, tools, post, model=None, system=None, max_steps=24,
           include=None, on_event=None, timeout=300, on_retry=None, history=None,
           should_stop=None, interject=None) -> dict:
     """Let Gemini work the tools until it answers in words, or until ``max_steps``.
+
+    ``max_steps=None`` means no cap: the run ends when Gemini answers, the user stops
+    it, or the stuck detector fires (the identical call ``STUCK_AFTER`` rounds running).
+    That is the setting for a window with a Stop button and a person behind it; the
+    CLI keeps a cap because nobody is watching it.
 
     ``should_stop()`` and ``interject()`` are how the person at the window gets a word
     in while Gemini is busy — the two things a chat has that a batch job does not.
@@ -381,21 +396,43 @@ def drive(task, key, *, run_tool, tools, post, model=None, system=None, max_step
     else:
         history.append({"role": "user", "parts": [{"text": task}]})
     steps: list = []
+    last_round = None        # the (name, args) signature of the previous round's calls
+    same_rounds = 0
 
     def emit(kind, **fields):
         if on_event:
             on_event(kind, fields)
 
-    for step in range(1, max_steps + 1):
+    def check_in(prompt: str, why: str) -> dict:
+        """One more request with function calling OFF, so the only thing Gemini can do
+        is say where it got to. The history then ends with a model turn, and "continue"
+        is an ordinary next question."""
+        history[-1] = {"role": "user",
+                       "parts": list(history[-1]["parts"]) + [{"text": prompt}]}
+        body = {"contents": history, "tools": [{"functionDeclarations": declarations}],
+                "toolConfig": {"functionCallingConfig": {"mode": "NONE"}}}
+        if system:
+            body["systemInstruction"] = {"parts": [{"text": system}]}
+        payload = post(body, key, **options)
+        candidates = payload.get("candidates") or []
+        content = (candidates[0].get("content") if candidates else None) or {}
+        if content:
+            history.append(content)
+        return {"text": _text_of(content), "steps": steps, "history": history,
+                "stopped_because": why}
+
+    # `model` is omitted rather than passed as None so the transport's own default
+    # stays the single source of truth for which model is current.
+    options = {"timeout": timeout, "on_retry": on_retry}
+    if model:
+        options["model"] = model
+
+    rounds = range(1, max_steps + 1) if max_steps else itertools.count(1)
+    for step in rounds:
         body: dict = {"contents": history,
                       "tools": [{"functionDeclarations": declarations}]}
         if system:
             body["systemInstruction"] = {"parts": [{"text": system}]}
-        # `model` is omitted rather than passed as None so the transport's own default
-        # stays the single source of truth for which model is current.
-        options = {"timeout": timeout, "on_retry": on_retry}
-        if model:
-            options["model"] = model
         payload = post(body, key, **options)
 
         candidates = payload.get("candidates") or []
@@ -447,19 +484,15 @@ def drive(task, key, *, run_tool, tools, post, model=None, system=None, max_step
             return {"text": "", "steps": steps, "history": history,
                     "stopped_because": STOPPED_BY_USER}
 
-    # The cap: a check-in, not a wall. One more request with function calling switched
-    # off, so the only thing Gemini can do is say where it got to. The history then ends
-    # with a model turn, and "continue" is an ordinary next question.
-    history[-1] = {"role": "user", "parts": list(history[-1]["parts"]) +
-                   [{"text": PAUSE_PROMPT.format(n=max_steps)}]}
-    body = {"contents": history, "tools": [{"functionDeclarations": declarations}],
-            "toolConfig": {"functionCallingConfig": {"mode": "NONE"}}}
-    if system:
-        body["systemInstruction"] = {"parts": [{"text": system}]}
-    payload = post(body, key, **options)
-    candidates = payload.get("candidates") or []
-    content = (candidates[0].get("content") if candidates else None) or {}
-    if content:
-        history.append(content)
-    return {"text": _text_of(content), "steps": steps, "history": history,
-            "stopped_because": f"{PAUSED} {max_steps} rounds"}
+        this_round = json.dumps([(c.get("name"), c.get("args") or {}) for c in calls],
+                                sort_keys=True)
+        same_rounds = same_rounds + 1 if this_round == last_round else 1
+        last_round = this_round
+        if same_rounds >= STUCK_AFTER:
+            call = ", ".join(f"{c.get('name')}({json.dumps(c.get('args') or {})[:80]})"
+                             for c in calls)
+            return check_in(STUCK_PROMPT.format(call=call, n=same_rounds),
+                            f"{STUCK}: {call} repeated {same_rounds} times")
+
+    # The cap: a check-in, not a wall.
+    return check_in(PAUSE_PROMPT.format(n=max_steps), f"{PAUSED} {max_steps} rounds")
