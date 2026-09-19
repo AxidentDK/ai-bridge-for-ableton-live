@@ -144,9 +144,11 @@ class Live:
         exactly where Live says it is.
         """
         want = str(target).strip()
-        lo = float(self.b.get(path, "min"))
-        hi = float(self.b.get(path, "max"))
-        quantized = bool(self.b.get(path, "is_quantized"))
+        props = ("min", "max", "is_quantized")
+        lo, hi, quantized = (self.b.get_many([(path, p) for p in props])
+                             if hasattr(self.b, "get_many")
+                             else [self.b.get(path, p) for p in props])
+        lo, hi, quantized = float(lo), float(hi), bool(quantized)
 
         def number(text):
             # In BASE units, because Live changes the prefix along one parameter: an EQ
@@ -159,19 +161,25 @@ class Live:
             scale = {"khz": 1e3, "ms": 1e-3, "us": 1e-6, "µs": 1e-6}.get(m.group(2).lower(), 1.0)
             return float(m.group(1)) * scale
 
-        def label(raw):
-            # The TEXT Live shows. display_value is the index for list-like parameters
-            # (an arpeggiator's rate reads 6.0 there and "1/16" here), and Live does not
-            # flag all of them as quantized — so the target's shape decides the route.
-            return str(self.b.call(path, "str_for_value", raw))
+        def labels(raws):
+            # The TEXT Live shows for each raw value. display_value is the index for
+            # list-like parameters (an arpeggiator's rate reads 6.0 there and "1/16"
+            # here), and Live does not flag all of them as quantized — so the target's
+            # shape decides the route. ONE round-trip for the lot: while Live plays, a
+            # call costs 0.5-0.8 s, and forty of them was 24 s to turn one knob.
+            raws = list(raws)
+            if hasattr(self.b, "batch"):
+                ops = [{"method": "call", "params": {"path": path, "func": "str_for_value",
+                                                     "args": [r]}} for r in raws]
+                return [str(r.get("result")) if r.get("ok") else "" for r in self.b.batch(ops)]
+            return [str(self.b.call(path, "str_for_value", r)) for r in raws]
 
         names_a_step = not re.fullmatch(r"[+-]?\d+(?:[.,]\d+)?\s*[A-Za-z%°]*", want)
         if quantized or names_a_step:
-            options = []
             squash = lambda s: re.sub(r"\s+", "", s).lower()          # noqa: E731
-            for raw in range(int(lo), int(hi) + 1):
-                text = label(raw)
-                options.append(text)
+            steps = list(range(int(lo), int(hi) + 1))
+            options = labels(steps)
+            for raw, text in zip(steps, options):
                 if squash(text) == squash(want):
                     self.b.set(path, "value", raw)
                     return {"path": path, "value": raw, "display": text, "asked_for": want}
@@ -186,34 +194,38 @@ class Live:
         # without touching the parameter, so the only write is the final one. The first
         # version probed by writing min and max, and a refused target left a master
         # limiter at +24 dB (field-hit 2026-09-19, on the day it was written).
-        def would_show(raw):
-            text = label(raw).replace("−", "-")
-            if "inf" in text.lower():
-                return float("-inf")
-            return number(text)
+        def shown_as(text):
+            text = text.replace("−", "-")
+            return float("-inf") if "inf" in text.lower() else number(text)
 
-        at_lo, at_hi = would_show(lo), would_show(hi)
-        if at_lo is None or at_hi is None:
-            raise ValueError("%r does not display a number (it shows %r)" % (path, label(lo)))
-        rising = at_hi >= at_lo
-        if not (min(at_lo, at_hi) <= goal <= max(at_lo, at_hi)):
-            raise ValueError("%r can only reach %s to %s, not %s" % (path, at_lo, at_hi, goal))
-        a, b = lo, hi
-        mid = (a + b) / 2.0
-        for _ in range(iterations):
-            mid = (a + b) / 2.0
-            got = would_show(mid)
-            if got is None:
+        # A GRID search, refined, rather than a bisection: 33 points across the range in
+        # one round-trip, then 33 across the interval that brackets the goal, and again.
+        # Three round-trips reach 1/32^3 of the range; a bisection to the same precision
+        # is fifteen. `iterations` bounds the rounds for the pathological case.
+        a, b, best, best_text = lo, hi, lo, ""
+        for round_no in range(min(max(1, iterations), 4)):
+            raws = [a + (b - a) * k / 32.0 for k in range(33)]
+            texts = labels(raws)
+            vals = [shown_as(t) for t in texts]
+            if round_no == 0:
+                at_lo, at_hi = vals[0], vals[-1]
+                if at_lo is None or at_hi is None:
+                    raise ValueError("%r does not display a number (it shows %r)"
+                                     % (path, texts[0]))
+                if not (min(at_lo, at_hi) <= goal <= max(at_lo, at_hi)):
+                    raise ValueError("%r can only reach %s to %s, not %s"
+                                     % (path, at_lo, at_hi, goal))
+            known = [(abs(v - goal), r, t) for v, r, t in zip(vals, raws, texts)
+                     if v is not None and v != float("-inf")]
+            if not known:
                 break
-            if abs(got - goal) < 0.0005 * max(1.0, abs(goal)):
+            err, best, best_text = min(known)
+            if err < 0.0005 * max(1.0, abs(goal)):
                 break
-            if (got < goal) == rising:
-                a = mid
-            else:
-                b = mid
-        self.b.set(path, "value", mid)
-        return {"path": path, "value": self.b.get(path, "value"), "display": label(mid),
-                "asked_for": want}
+            k = raws.index(best)
+            a, b = raws[max(0, k - 1)], raws[min(32, k + 1)]
+        self.b.set(path, "value", best)
+        return {"path": path, "value": best, "display": best_text, "asked_for": want}
 
     # --- surgical note editing (by note id) ----------------------------------------------
     def edit_notes(self, clip_path: str, edits: list[dict] | None = None,
