@@ -288,6 +288,29 @@ def test_a_comment_typed_mid_run_rides_along_with_the_next_tool_results():
     assert "interject" in events
 
 
+def test_without_a_cap_the_identical_call_three_rounds_running_is_stuck():
+    """The intelligent guard for the window: honest work never repeats the same call
+    with the same arguments round after round; a runaway loop does nothing else."""
+    script = _Script(*[_calls(("t", {"a": "same"})) for _ in range(T.STUCK_AFTER)],
+                     _text("I was trying to load Cutoff and it keeps failing."))
+    result = T.drive("go", "k", run_tool=lambda n, a: {"x": 1}, tools=_ONE_ARG,
+                     post=script, max_steps=None)
+    assert result["stopped_because"].startswith(T.STUCK), result["stopped_because"]
+    assert len(result["steps"]) == T.STUCK_AFTER
+    assert "Cutoff" in result["text"]
+    assert script.bodies[-1]["toolConfig"] == {"functionCallingConfig": {"mode": "NONE"}}
+    assert "circles" in script.bodies[-1]["contents"][-1]["parts"][-1]["text"]
+
+
+def test_without_a_cap_varied_work_runs_as_long_as_it_takes():
+    """Forty different calls, no cap, no stuck detection, ends when Gemini answers."""
+    script = _Script(*[_calls(("t", {"a": str(i)})) for i in range(40)], _text("done"))
+    result = T.drive("go", "k", run_tool=lambda n, a: {"x": 1}, tools=_ONE_ARG,
+                     post=script, max_steps=None)
+    assert result["stopped_because"] == "answered"
+    assert len(result["steps"]) == 40
+
+
 def test_the_cap_is_a_check_in_with_tools_switched_off_not_a_silent_wall():
     """A model that never stops calling, which is what a genuine loop looks like — or a
     five-minute orchestral piece, which looks the same from here. At the cap Gemini gets
