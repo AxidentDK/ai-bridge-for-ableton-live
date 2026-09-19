@@ -521,9 +521,20 @@ class StudioWindow:
                         self._say(None, reply + "\n")
                         self.log.append("model", reply)
                         if why.startswith(gemini_tools.STUCK):
-                            self._say("dim", "\nGemini was repeating the same call, so "
-                                             "it was asked to stop and explain. Tell it "
-                                             "what to do next.\n")
+                            # Name the failure, not the count: "what went wrong" is the
+                            # question the person has, and the last error answers it.
+                            bad = [s for s in result["steps"] if not s["ok"]]
+                            if bad:
+                                last = bad[-1]
+                                self._say("err", f"\nStopped: {last['name']} failed "
+                                                 f"{gemini_tools.STUCK_AFTER} times in a "
+                                                 f"row — {last['result'].get('error', '')}"
+                                                 "\n")
+                            else:
+                                self._say("err", f"\nStopped: {why}\n")
+                            self._say("dim", "Gemini's own account is above. Fix the "
+                                             "cause if it's on your side, then tell it "
+                                             "to continue.\n")
                         elif why.startswith(gemini_tools.PAUSED):
                             self._say("dim", f"\nChecking in ({why}). Say \"continue\" "
                                              "to let it carry on, or change course.\n")
