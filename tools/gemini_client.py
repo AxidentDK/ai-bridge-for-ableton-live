@@ -78,13 +78,38 @@ _RETRY_CODES = (429, 500, 502, 503, 504)
 
 
 class GeminiError(RuntimeError):
-    """A request failed. Carries enough to tell the user WHICH kind of failure."""
+    """A request failed. Carries enough to tell the user WHICH kind of failure.
+
+    ``str(exc)`` is written for the person at the window; ``detail`` is Google's raw
+    answer, for the log. A producer who has used up the free tier needs "try again
+    later", not a JSON blob with a quota id in it — but the blob is what tells a bug
+    report apart from a quota, so it is kept, just not shown.
+    """
 
     def __init__(self, message: str, *, status: int | None = None,
-                 retryable: bool = False):
+                 retryable: bool = False, detail: str = ""):
         super().__init__(message)
         self.status = status
         self.retryable = retryable
+        self.detail = detail
+
+
+NO_INTERNET = ("Couldn't reach Google. Check your internet connection and try again.")
+
+BAD_KEY = ("Google didn't accept that key. Check it under Settings → Gemini API key, "
+           "or make a new one — the dialog links to the page.")
+
+OUT_OF_QUOTA = ("You've used today's free Gemini allowance, or this key has no quota "
+                "left. The free tier resets on Google's clock, and a newly bought credit "
+                "can take about a day to register — so try again later rather than now.")
+
+
+def _is_bad_key(code: int, detail: str) -> bool:
+    """Google says an invalid key two ways: HTTP 400 with API_KEY_INVALID in the body, or
+    HTTP 403 for a key whose project has the API turned off. Both mean the same to the
+    person typing: the key is not going to work, fix the key."""
+    return (code == 400 and "API_KEY_INVALID" in detail) or \
+           (code == 400 and "API key not valid" in detail) or code == 403
 
 
 def _is_out_of_credit(detail: str) -> bool:
@@ -139,12 +164,9 @@ def post(body: dict, key: str, *, model: str = DEFAULT_MODEL, timeout: int = 300
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:900]
             if exc.code == 429 and _is_out_of_credit(detail):
-                raise GeminiError(
-                    "Gemini rejected the request for lack of quota, not for speed. "
-                    "A newly bought credit can take about a day to register, and the "
-                    "free tier resets on Google's clock, so this is worth re-checking "
-                    "later rather than retrying now.\n\n" + detail,
-                    status=429) from None
+                raise GeminiError(OUT_OF_QUOTA, status=429, detail=detail) from None
+            if _is_bad_key(exc.code, detail):
+                raise GeminiError(BAD_KEY, status=exc.code, detail=detail) from None
             if exc.code in _RETRY_CODES and attempt < attempts:
                 # Exponential backoff. Three requests fired at once all came back 503,
                 # so the fix is to wait AND to stop running reviews in parallel.
@@ -155,16 +177,17 @@ def post(body: dict, key: str, *, model: str = DEFAULT_MODEL, timeout: int = 300
                 time.sleep(delay)
                 continue
             raise GeminiError(f"Gemini API HTTP {exc.code}: {detail}",
-                              status=exc.code) from None
+                              status=exc.code, detail=detail) from None
         except (urllib.error.URLError, TimeoutError) as exc:
             if attempt < attempts:
                 delay = 2 ** attempt * 5
                 if on_retry:
-                    on_retry(f"{type(exc).__name__}, retrying in {delay}s")
+                    on_retry(f"no answer from Google, retrying in {delay}s")
                 time.sleep(delay)
                 continue
-            raise GeminiError(f"network error after {attempts} attempts: {exc}",
-                              retryable=True) from None
+            raise GeminiError(NO_INTERNET, retryable=True,
+                              detail=f"{type(exc).__name__} after {attempts} attempts: "
+                                     f"{exc}") from None
     if payload is None:
         raise GeminiError("no response")
     return payload
@@ -216,9 +239,17 @@ def list_models(key: str) -> list[tuple[str, int]]:
         with urllib.request.urlopen(request, timeout=60) as response:
             payload = json.load(response)
     except urllib.error.HTTPError as exc:
-        raise GeminiError(f"HTTP {exc.code} listing models: "
-                          f"{exc.read().decode('utf-8', 'replace')[:400]}",
-                          status=exc.code) from None
+        detail = exc.read().decode("utf-8", "replace")[:400]
+        if _is_bad_key(exc.code, detail):
+            raise GeminiError(BAD_KEY, status=exc.code, detail=detail) from None
+        raise GeminiError(f"HTTP {exc.code} listing models: {detail}",
+                          status=exc.code, detail=detail) from None
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        # This is the first call a new key makes, from the key dialog. Without this
+        # branch a laptop with the Wi-Fi off reports "URLError: getaddrinfo failed"
+        # against a key that is perfectly fine.
+        raise GeminiError(NO_INTERNET, retryable=True,
+                          detail=f"{type(exc).__name__}: {exc}") from None
     return sorted(
         (m["name"].removeprefix("models/"), m.get("inputTokenLimit", 0))
         for m in payload.get("models", [])
@@ -293,7 +324,7 @@ class Transcript:
     def append(self, role: str, text: str, *, note: str = "") -> None:
         if role == "user":
             self.exchanges += 1
-        heading = {"user": f"## {self.exchanges}. Kim",
+        heading = {"user": f"## {self.exchanges}. You",
                    "model": "### Gemini",
                    "error": "### ⚠ failed"}.get(role, f"### {role}")
         stamp = datetime.now().strftime("%H:%M:%S")

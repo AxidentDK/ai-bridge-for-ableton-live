@@ -1,4 +1,4 @@
-# What the bridge can do — all 62 tools
+# What the bridge can do — all 63 tools
 
 Every tool below is reachable from any MCP client connected to the bridge. You do not
 call them by name: you ask for what you want in plain language and the assistant picks.
@@ -30,6 +30,7 @@ named tools are the ergonomic layer on top, not the limit.
 | `live_dialog` | Is a modal dialog blocking everything, and what does it say |
 | `live_undo` | Undo or redo the last action |
 | `live_save_set` | Save the set (Ctrl+S, verified via the .als file) |
+| `live_save_clip` | Save one clip as a file under `User Library\AI Bridge\Clips` (MIDI → .mid, audio → a copy), then show Session View so you can drag it in |
 | `live_cleanup_tracks` | Delete unused tracks |
 
 ### Raw LOM (the generic proxy)

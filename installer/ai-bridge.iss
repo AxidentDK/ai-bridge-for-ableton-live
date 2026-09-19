@@ -67,7 +67,7 @@ Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Gemini Studio (Ableton)"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\tools\gemini_studio.py"""; WorkingDir: "{app}\app"; IconFilename: "{app}\app\assets\ai-bridge-lit.ico"; Comment: "Chat with Gemini and let it work inside Ableton Live"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\tools\gemini_studio.py"""; WorkingDir: "{app}\app"; Description: "Open Gemini Studio now"; Flags: postinstall nowait skipifsilent unchecked
+Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\tools\gemini_studio.py"""; WorkingDir: "{app}\app"; Description: "Open Gemini Studio now"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
 ; Take the Control Surface back out of Live's User Library. Same script, same logic as
@@ -100,11 +100,12 @@ begin
        or (ResultCode <> 0) then
     begin
       SuppressibleMsgBox(
-        'The bridge is installed, but it could not be added to Ableton Live automatically.' + #13#10#13#10 +
-        'Usually this means Live''s User Library was not found in its standard place.' + #13#10 +
-        'Open Live once, then run this from PowerShell (with your own path if Live keeps' + #13#10 +
-        'its User Library somewhere else):' + #13#10#13#10 +
-        '  "' + ExpandConstant('{app}\python\python.exe') + '" "' +
+        'The program is installed, but it could not be added to Ableton Live yet:' + #13#10 +
+        'Live''s User Library was not found in its usual place.' + #13#10#13#10 +
+        'Open Ableton Live once, then run this installer again.' + #13#10#13#10 +
+        'If Live keeps its User Library somewhere else (Preferences > Library shows where),' + #13#10 +
+        'run this in PowerShell with that path instead:' + #13#10#13#10 +
+        '  & "' + ExpandConstant('{app}\python\python.exe') + '" "' +
         ExpandConstant('{app}\app\install.py') + '" --user-library "<path to your User Library>"',
         mbError, MB_OK, IDOK);
     end;

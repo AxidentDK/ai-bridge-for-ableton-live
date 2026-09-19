@@ -41,8 +41,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "host"))
 import gemini_client                                                  # noqa: E402
 import gemini_tools                                                   # noqa: E402
 from gemini_ui import (                                               # noqa: E402
-    BG, DIM, ERR, FALLBACK_MODELS, FG, KEY_PATH, MODEL, PANEL, USER, KeyDialog,
+    BG, DIM, ERR, FALLBACK_MODELS, FG, KEY_PATH, KEY_URL, MODEL, PANEL, USER, KeyDialog,
 )
+
+#: Said when Live cannot be reached. The two causes a new user actually hits, in the
+#: order they hit them, with the exact menu path — not "connection refused".
+LIVE_DOWN = ("Can't reach Live. Is it open, with AI Bridge picked under "
+             "Preferences → Link, Tempo & MIDI → Control Surface?")
+
+
+def pretty_model(model_id: str) -> str:
+    """``gemini-3.1-pro-preview`` → ``Gemini 3.1 Pro (preview)``, for the status bar.
+
+    The dropdown keeps the raw ids because those are what Google's list returns and
+    what $GEMINI_MODEL takes; the status bar is read, not typed into.
+    """
+    words = model_id.split("-")
+    tail = []
+    if len(words) > 1 and words[-1].lower() in ("preview", "exp", "latest"):
+        tail = [f"({words.pop().lower()})"]
+    return " ".join([w.capitalize() for w in words] + tail)
 
 
 class StudioWindow:
@@ -57,7 +75,7 @@ class StudioWindow:
         self.log = gemini_client.Transcript(gemini_tools.SESSION_DIR, label="studio",
                                             model=self.model)
 
-        root.title("Gemini — studio")
+        root.title("Gemini Studio")
         root.geometry("1080x820")
         root.configure(bg=BG)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -73,8 +91,12 @@ class StudioWindow:
                                       state="readonly", values=list(FALLBACK_MODELS))
         self.model_box.pack(side="left", padx=(8, 0))
         self.model_box.bind("<<ComboboxSelected>>", self._on_model_change)
-        self.tools_label = tk.Label(top, text="", bg=BG, fg=DIM, font=self.body)
-        self.tools_label.pack(side="right")
+        # Right-hand corner: is Live there? Checked at startup and again after anything
+        # fails, so "Live: not reachable" is on screen before the user wonders why every
+        # answer comes back empty.
+        self.live_label = tk.Label(top, text="", bg=BG, fg=DIM, font=self.body)
+        self.live_label.pack(side="right")
+        self.live_ok: bool | None = None
 
         wrap = tk.Frame(root, bg=BG)
         wrap.pack(fill="both", expand=True, padx=10, pady=(8, 0))
@@ -128,16 +150,16 @@ class StudioWindow:
         self.status.pack(fill="x")
 
         self._build_menu()
-        self._count_tools()
         self._warm_sidecar()
         self._say("dim",
-                  "Gemini has the bridge's tools here — it can read the set, search the "
-                  "library by how something SOUNDS, audition, load and play.\n"
-                  "Tool calls appear as they happen. Enter sends · Shift+Enter for a "
-                  "newline.\n"
-                  "live_save_set is blocked: nothing here can write over your set.\n"
-                  f"Logging to {self.log.path.name} as we go.\n")
+                  "Gemini can work your Live set from here: read it, find sounds in your "
+                  "library, audition and load them, write clips, play.\n"
+                  "You will see each step it takes as it happens. Enter sends · "
+                  "Shift+Enter for a new line.\n"
+                  "It can never save your set — that stays your key press, so nothing "
+                  "here can write over your work.\n")
         self._idle()
+        self._check_live()
         self.root.after(100, self._drain)
         if not self.key:
             self._say("err", "\nNo API key yet — paste one to start.\n")
@@ -167,6 +189,8 @@ class StudioWindow:
         settings = tk.Menu(menubar, tearoff=0)
         settings.add_command(label="Gemini API key…", command=self.ask_for_key)
         settings.add_command(label="Refresh model list", command=self._load_models_async)
+        settings.add_separator()
+        settings.add_command(label="Check the connection to Live", command=self._check_live)
         menubar.add_cascade(label="Settings", menu=settings)
 
         helpmenu = tk.Menu(menubar, tearoff=0)
@@ -176,15 +200,17 @@ class StudioWindow:
                              command=lambda: messagebox.showinfo(
                                  "Where your key is stored",
                                  f"{KEY_PATH}\n\nOutside the program's folder, so it "
-                                 "cannot be shared or committed by accident. Delete that "
-                                 "file to revoke access.", parent=self.root))
+                                 "cannot be shared by accident. Delete that file and "
+                                 "the key is gone from this computer.", parent=self.root))
         helpmenu.add_command(label="What this window can do",
                              command=lambda: messagebox.showinfo(
                                  "Gemini Studio",
                                  "Gemini is connected to Ableton Live through the AI "
                                  "Bridge and can use every one of its tools: read your "
-                                 "set, search your library by how something SOUNDS, "
-                                 "audition it, load it, write clips and move controls.\n\n"
+                                 "set, find sounds in your library (by how they sound, "
+                                 "once the optional listening module is installed), "
+                                 "audition and load them, write clips and move "
+                                 "controls.\n\n"
                                  "Saving your set is deliberately blocked — nothing here "
                                  "can overwrite your work.", parent=self.root))
         menubar.add_cascade(label="Help", menu=helpmenu)
@@ -244,13 +270,39 @@ class StudioWindow:
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _count_tools(self) -> None:
-        try:
-            import mcp_server                                         # noqa: PLC0415
-            declarations, _ = gemini_tools.to_declarations(mcp_server.TOOLS)
-            self.tools_label.configure(text=f"{len(declarations)} tools · save blocked")
-        except Exception as exc:                                      # noqa: BLE001
-            self.tools_label.configure(text=f"tools unavailable: {exc}")
+    def _check_live(self) -> None:
+        """Ping the bridge inside Live, off the UI thread; the answer lands in ``_drain``.
+
+        A refused connection comes back at once. What takes time is a Live that is open
+        but has not finished loading, where the connect can wait out its timeout — and
+        that is exactly the moment a user opens this window, so it must not freeze.
+        """
+        self.live_label.configure(text="checking Live…", fg=DIM)
+
+        def work():
+            try:
+                import mcp_server                                     # noqa: PLC0415
+                mcp_server.bridge().ping()
+                self.events.put(("live", {"ok": True}))
+            except Exception as exc:                                  # noqa: BLE001
+                self.events.put(("live", {"ok": False, "detail": f"{type(exc).__name__}: "
+                                                                 f"{exc}"}))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_live(self, ok: bool, detail: str = "") -> None:
+        was = self.live_ok
+        self.live_ok = ok
+        if ok:
+            self.live_label.configure(text="Live: connected", fg=MODEL)
+            if was is False:
+                self._say("dim", "\nLive is back.\n")
+            return
+        self.live_label.configure(text="Live: not reachable", fg=ERR)
+        # Said once per outage, not once per failed tool call.
+        if was is not False:
+            self._say("err", f"\n{LIVE_DOWN}\n")
+            self.log.append("error", f"{LIVE_DOWN}\n{detail}")
 
     def _say(self, tag: str, text: str) -> None:
         self.view.configure(state="normal")
@@ -259,8 +311,10 @@ class StudioWindow:
         self.view.see("end")
 
     def _idle(self) -> None:
-        self.status.configure(
-            text=f"{len(self.history)} turns in context · {self.model}", fg=DIM)
+        turns = len(self.history) // 2
+        remembered = ("nothing remembered yet" if not turns else
+                      f"{turns} exchange{'' if turns == 1 else 's'} remembered")
+        self.status.configure(text=f"{pretty_model(self.model)} · {remembered}", fg=DIM)
 
     def _set_busy(self, busy: bool, message: str = "") -> None:
         self.busy = busy
@@ -289,6 +343,13 @@ class StudioWindow:
         self._say("dim", "\nKey accepted.\n")
 
     def open_log(self) -> None:
+        # A .md file has no opener on a fresh Windows, so handing it to the shell shows
+        # "How do you want to open this file?" — a question the user did not ask. Notepad
+        # is always there and reads markdown as the plain text it is.
+        if sys.platform == "win32":
+            import subprocess                                         # noqa: PLC0415
+            subprocess.Popen(["notepad.exe", str(self.log.path)])     # noqa: S603, S607
+            return
         import webbrowser                                             # noqa: PLC0415
         webbrowser.open(self.log.path.as_uri())
 
@@ -339,7 +400,7 @@ class StudioWindow:
                 history=self.history,
                 on_retry=lambda message: self.events.put(("retry", {"message": message})))
         except gemini_client.GeminiError as exc:
-            self.events.put(("failed", {"message": str(exc)}))
+            self.events.put(("failed", {"message": str(exc), "detail": exc.detail}))
             return
         except Exception as exc:                                      # noqa: BLE001
             # A bug in the loop must not take the window with it, and must not look like
@@ -370,12 +431,19 @@ class StudioWindow:
                     names = fields["names"]
                     self.model_box.configure(values=names)
                     self._idle()
+                elif kind == "live":
+                    self._on_live(fields["ok"], fields.get("detail", ""))
                 elif kind == "retry":
                     self._set_busy(True, fields["message"])
                 elif kind == "failed":
                     self._say("err", f"\n⚠ {fields['message']}\n")
-                    self.log.append("error", fields["message"])
+                    # The screen gets the plain sentence; the log also gets Google's raw
+                    # answer, which is what a bug report needs.
+                    detail = fields.get("detail") or ""
+                    self.log.append("error", fields["message"] +
+                                    (f"\n\n```\n{detail}\n```" if detail else ""))
                     self._set_busy(False)
+                    self._check_live()
                 elif kind == "done":
                     result = fields["result"]
                     # The history is only adopted on success, so a failed turn leaves the
@@ -389,8 +457,14 @@ class StudioWindow:
                     failed = sum(1 for s in result["steps"] if not s["ok"])
                     if result["stopped_because"] != "answered":
                         self._say("err", f"\n⚠ stopped: {result['stopped_because']}\n")
-                    self._say("dim", f"{len(result['steps'])} tool calls, {failed} failed\n")
+                    steps = len(result["steps"])
+                    if steps:
+                        self._say("dim", f"{steps} step{'' if steps == 1 else 's'}"
+                                         f"{f', {failed} failed' if failed else ''}\n")
                     self._set_busy(False)
+                    if failed:
+                        # The usual reason a step fails is that Live went away.
+                        self._check_live()
         except queue.Empty:
             pass
         self.root.after(100, self._drain)

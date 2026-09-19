@@ -96,10 +96,11 @@ def do_install(dest: Path):
     print(f"{action} AI Bridge -> {dest}  ({n} files)")
     print()
     print("Next:")
-    print("  1. Restart Ableton Live (it scans Remote Scripts at startup).")
+    print("  1. Restart Ableton Live (it only looks for new control surfaces when it starts).")
     print("  2. Preferences -> Link, Tempo & MIDI -> Control Surface: pick "
           '"AI Bridge" in an empty slot (Input/Output = None).')
-    print("  3. The bridge then listens on 127.0.0.1:8766 whenever Live runs.")
+    print("  3. That's it. The bridge is active whenever Live is running, and only "
+          "programs on this computer can reach it.")
 
 
 def m4l_dest(user_library: Path) -> Path:

@@ -4,7 +4,7 @@
 
 > ## ✅ Version 1.0 — stable, and ready to be relied on.
 > The bridge is feature-complete and its whole test suite is green: **154 tests**, and
-> every tool verified against a running Ableton Live 12.4.3. **62 tools** cover the Live
+> every tool verified against a running Ableton Live 12.4.3. **63 tools** cover the Live
 > Object Model, and the four generic ones reach **563 operations across 21 object types**
 > — every one listed by name in [docs/LOM_REFERENCE.md](docs/LOM_REFERENCE.md).
 >
@@ -36,14 +36,16 @@ And because it can see your set *and* knows the theory, it can help you write wh
 you want that. Useful, but not the point: the point is that it can operate the
 instrument you already own.
 
-You keep full control the whole time — nothing leaves your computer, nothing happens
-behind your back, and Ctrl+Z still works. Free and open source (Apache-2.0).
+You keep full control the whole time — nothing happens behind your back, and Ctrl+Z
+still works. The bridge itself sends nothing off your computer; what you type goes to
+the AI you chose, and only there. Free and open source (Apache-2.0).
 
 ## Two layers — and you only need the first
 
 **The bridge is the light part, and it is all you need to start.** It installs in
 minutes, needs nothing but Python, downloads no models, and sends nothing off your
-computer. Everything described below works with the bridge on its own.
+computer by itself — only the AI you talk to sees what you type. Everything described
+below works with the bridge on its own.
 
 **The listening module is an optional heavy part you can add later.** It is a
 separate program that listens through your sample library once and writes down what
@@ -138,13 +140,14 @@ or any time mid-flow — and you watch it happen in Live. A few things you can s
 **Finishing & housekeeping**
 - *"Clean up the unused tracks."*
 - *"Render the arrangement to a WAV and tell me how loud it is in LUFS."*
-- *"Save the set."*
+- *"Rename the tracks after what's on them."*
 
 **Keeping watch**
 - *"Tell me if the tempo changes while I'm working."*
 
 You stay in control the whole time — you see and hear every change as it
-happens, you can undo anything in Live, and nothing leaves your computer.
+happens, you can undo anything in Live, and the bridge sends nothing anywhere
+except to the AI you are talking to.
 
 ## Which AI? Either. Pick your window.
 
@@ -154,13 +157,14 @@ so you get a different window:
 | | **Claude** | **Gemini** |
 |---|---|---|
 | Your window | the **Claude desktop app** (or Claude Code) | **Gemini Studio**, included |
-| How it connects | MCP — register the bridge as a server | function calling, built in |
+| How it connects | one command in Claude's settings (below) | built in |
 | What you need | a Claude subscription | a Gemini API key — free to start |
 
 **Gemini Studio** is a chat window that ships with the bridge. Paste an API key once and
-Gemini can read your set, search your library by how something *sounds*, audition it, load
-it, write clips and move controls — with every tool call shown as it happens, so you can
-see what it reached for. The installer puts it on your desktop.
+Gemini can read your set, find sounds in your library, audition and load them, write clips
+and move controls — with every step shown as it happens, so you can see what it reached
+for. It never saves your set: that stays your key press. The installer puts the window on
+your desktop.
 
 > ⚠️ **Gemini is limited on the free tier.** It is enough to work a track at a time, but
 > not to hold a whole project in view or to A/B two versions — which is most of what mixing
@@ -195,8 +199,8 @@ irm https://raw.githubusercontent.com/AxidentDK/ai-bridge-for-ableton-live/main/
 2. **Restart Live**, then **Preferences → Link, Tempo & MIDI → Control
    Surface** — pick **AI Bridge** in an empty slot (leave its Input/Output on
    *None*).
-3. That's it. The bridge listens on your own computer only
-   (`127.0.0.1:8766`) whenever Live is running.
+3. That's it. The bridge is active whenever Live is running, and only programs on
+   your own computer can reach it.
 
 **Then open Gemini Studio** — the desktop icon, or:
 
@@ -208,10 +212,18 @@ First run, choose **Settings → Gemini API key**. The dialog links to Google's 
 free one, checks the key before saving it, and stores it in your user profile — outside
 the program's folder, so it cannot be shared or committed by accident.
 
-**Connect an AI via MCP** (Claude Code example):
+**Connect Claude** — one command in Claude Code (the Claude desktop app takes the same
+thing under its settings):
 
 ```bash
 claude mcp add ai-bridge -- python /path/to/ai-bridge-for-ableton-live/host/mcp_server.py
+```
+
+If you installed with the Windows setup program, it brought its own Python, so point
+Claude at that one (replace `<you>` with your Windows user name):
+
+```powershell
+claude mcp add ai-bridge -- "C:\Users\<you>\AppData\Local\Programs\AI Bridge\python\python.exe" "C:\Users\<you>\AppData\Local\Programs\AI Bridge\app\host\mcp_server.py"
 ```
 
 **Or plain Python:**
@@ -241,7 +253,7 @@ Two halves over a local socket:
   is single-threaded and is never touched off-thread.
 - **Host** (outside Live) — a dependency-free Python client
   (`host/client.py`), an ergonomic layer (`host/api.py`), and a zero-dependency
-  **MCP stdio server** (`host/mcp_server.py`, 17 tools).
+  **MCP stdio server** (`host/mcp_server.py`, 63 tools).
 
 Wire protocol: length-prefixed JSON frames (4-byte big-endian length + UTF-8
 JSON). Request/response with ids, plus unsolicited event frames for
@@ -290,13 +302,13 @@ at the maintainer's discretion — see [CONTRIBUTING.md](CONTRIBUTING.md).
 aren't obvious (switching views, why similarity search needs folders added as
 *Places*, what the descriptions will and won't claim).
 
-**What it can do:** [docs/TOOLS.md](docs/TOOLS.md) — all 62 tools and what each one
+**What it can do:** [docs/TOOLS.md](docs/TOOLS.md) — all 63 tools and what each one
 does, grouped. You never call them by name, but you cannot ask for something you did
 not know was possible.
 
 **How far the coverage goes:** [docs/LOM_REFERENCE.md](docs/LOM_REFERENCE.md) — every
 property and function the bridge reaches, by name: **563 operations across 21 object
-types**, read from a running Live rather than copied from a manual. The 62 named tools
+types**, read from a running Live rather than copied from a manual. The 63 named tools
 are an ergonomic layer over this, not a limit on it.
 
 **Wire protocol:** [docs/PROTOCOL.md](docs/PROTOCOL.md) — everything needed to talk
