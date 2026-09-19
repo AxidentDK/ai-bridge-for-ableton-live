@@ -320,6 +320,50 @@ _SYNONYMS = {
     "reverberant": ("wet",), "roomy": ("wet",), "tight": ("dry",),
 }
 
+#: Words that turn the NEXT word into something the caller does not want. They were being
+#: thrown away: every word under three characters is dropped as noise, so "no drums"
+#: lost its "no" and became a request FOR drums. With 2,000+ drum tags in a real index
+#: against 45 bowed strings, "dark bowed strings, sad, no drums" returned five drum loops
+#: (field-hit 2026-09-19).
+_NEGATORS = ("no", "not", "non", "without", "minus", "except", "excluding", "sans")
+
+#: How sure a head must be before "no X" removes a file. Low enough to catch a drum loop
+#: heard at 0.45, high enough that a 0.1 whisper of "drums" on a string pad does not.
+_EXCLUDE_CONFIDENCE = 0.4
+
+
+def _split_negations(query: str) -> tuple[str, list[str]]:
+    """``"sad strings, no drums or percussion"`` → ``("sad strings", ["drum", "percussion"])``.
+
+    A negator claims the word after it, and any further words joined by or/nor/and. A
+    leading minus does the same ("-drums"). Excluded words are reduced to a stem so that
+    "drums" also removes `Drum kit` and `Drum machine`; four letters is the floor, so
+    "bass" does not shrink to "bas".
+    """
+    tokens = re.findall(r"-?\w+", query.lower())
+    wanted, excluded, i = [], [], 0
+
+    def stem(word: str) -> str:
+        return word[:-1] if word.endswith("s") and len(word) > 4 else word
+
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok.startswith("-") and len(tok) > 3:
+            excluded.append(stem(tok[1:]))
+            i += 1
+        elif tok in _NEGATORS and i + 1 < len(tokens):
+            i += 1
+            excluded.append(stem(tokens[i].lstrip("-")))
+            i += 1
+            while i + 1 < len(tokens) and tokens[i] in ("or", "nor", "and"):
+                excluded.append(stem(tokens[i + 1].lstrip("-")))
+                i += 2
+        else:
+            wanted.append(tok.lstrip("-"))
+            i += 1
+    return " ".join(wanted), [w for w in excluded if len(w) >= 3]
+
+
 #: Below this, a file is a ONE-SHOT rather than music. Not an arbitrary round number:
 #: the EffNet patch is 128 frames at a 256-sample hop and 16 kHz = 2.048 s, so a
 #: shorter file has to be padded or tiled to fill a window. The music-trained heads
@@ -456,6 +500,16 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
     if tag:
         # Any namespace at all — the escape hatch for a vocabulary we did not predict.
         _criterion("1=1", [], tag)
+    excluded: list[str] = []
+    if query:
+        query, excluded = _split_negations(query)
+        for word in excluded:
+            # Heard as it (by a head that can be believed at this length) OR named as it.
+            wheres.append(
+                "NOT (f.path LIKE ? OR EXISTS (SELECT 1 FROM tags t "      # noqa: S608
+                f"WHERE t.file_id = f.id AND t.label LIKE ? AND t.confidence >= ?{guard}))")
+            params.extend([f"%{word}%", f"%{word}%", _EXCLUDE_CONFIDENCE, *guard_params])
+        query = query or None
     if query:
         # `query` is the parameter a caller reaches for first, and the tool promises to
         # find things BY MEANING — so it searches what was HEARD as well as what the
@@ -618,6 +672,12 @@ def find(query: str | None = None, genre: str | None = None, mood: str | None = 
     result = {"source": "sidecar", "database": info["database"],
               "searched": info["files_analyzed"], "matches": len(out),
               "results": out}
+    if excluded:
+        # Said, like every other rewrite of the question.
+        result["excluded"] = excluded
+        result["excluded_note"] = (
+            "Left out every file heard or named as: " + ", ".join(excluded)
+            + " (heard at %.1f confidence or more)." % _EXCLUDE_CONFIDENCE)
     if query:
         # NEVER SILENT. A search that quietly rewrites the question is a search that
         # cannot be debugged — and the caller may have meant the word literally.

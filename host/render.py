@@ -293,14 +293,18 @@ def _mix_state(bridge) -> dict:
     """
     state = {"soloed": [], "muted": []}
     try:
-        tracks = bridge.get("live_set", "tracks") or []
-        for i, _t in enumerate(tracks):
-            path = "live_set tracks %d" % i
-            name = str(bridge.get(path, "name"))
-            if bridge.get(path, "solo"):
-                state["soloed"].append(name)
-            if bridge.get(path, "mute"):
-                state["muted"].append(name)
+        count = len(bridge.get("live_set", "tracks") or [])
+        pairs = [("live_set tracks %d" % i, prop)
+                 for i in range(count) for prop in ("name", "solo", "mute")]
+        # One round-trip, not three per track: a call costs 0.5-0.8 s while Live plays.
+        flat = (bridge.get_many(pairs) if hasattr(bridge, "get_many")
+                else [bridge.get(p, prop) for p, prop in pairs])
+        for i in range(count):
+            name, solo, mute = flat[i * 3:i * 3 + 3]
+            if solo:
+                state["soloed"].append(str(name))
+            if mute:
+                state["muted"].append(str(name))
     except Exception:  # noqa: BLE001 — a diagnostic must never block the render
         return {}
     if state["soloed"]:

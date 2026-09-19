@@ -378,6 +378,71 @@ def test_an_unmapped_query_reports_no_interpretation():
         assert "interpreted" not in r, r.get("interpreted")
 
 
+# =====================================================================================
+# "no drums" — the word that was thrown away
+# =====================================================================================
+
+def test_negations_are_split_off_the_query():
+    split = sidecar._split_negations
+    assert split("dark bowed strings, sad, no drums") == ("dark bowed strings sad", ["drum"])
+    assert split("pad without vocals or percussion") == ("pad", ["vocal", "percussion"])
+    assert split("warm pad -drums") == ("warm pad", ["drum"])
+    assert split("not bass") == ("", ["bass"])                # four letters: not "bas"
+    assert split("piano no") == ("piano no", [])              # a negator with nothing after it
+    assert split("a melancholic pad") == ("a melancholic pad", [])
+
+
+def _add_drums_and_strings(path):
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO files (id, path, duration_sec) VALUES (10, ?, 6.0)",
+                 (r"C:\Core\Loops\Dark Garage 130 bpm.wav",))
+    conn.execute("INSERT INTO files (id, path, duration_sec) VALUES (11, ?, 9.0)",
+                 (r"C:\Orch\Solo Sustain 01.wav",))
+    conn.execute("INSERT INTO files (id, path, duration_sec) VALUES (12, ?, 7.0)",
+                 (r"C:\Orch\Drums Ensemble Hit.wav",))
+    conn.executemany("INSERT INTO tags VALUES (?,?,?,?,?)", [
+        (10, "audio_event", "Drum kit", 0.82, "m"), (10, "mood_sad", "sad", 0.70, "m"),
+        (11, "audio_event", "Bowed string instrument", 0.77, "m"),
+        (11, "mood_sad", "sad", 0.80, "m"),
+        # A whisper of drums on a string sample must NOT remove it.
+        (11, "mtg_jamendo_instrument", "drums", 0.12, "m"),
+        # Named as drums, heard as strings: the name is evidence too.
+        (12, "audio_event", "Bowed string instrument", 0.60, "m")])
+    conn.commit()
+    conn.close()
+
+
+def test_no_drums_removes_what_was_heard_or_named_as_drums():
+    """The field-hit, 2026-09-19: "dark bowed strings, sad, no drums" → five drum loops,
+    `Dark Garage 130 bpm.wav` first. "no" was under three letters and dropped as noise, so
+    "drums" became a wanted word."""
+    with db() as path:
+        _add_drums_and_strings(path)
+        r = sidecar.find(query="dark bowed strings, sad, no drums", db_path=path)
+        paths = [x["path"] for x in r["results"]]
+        assert paths == [r"C:\Orch\Solo Sustain 01.wav"], paths
+        assert r["excluded"] == ["drum"] and "drum" in r["excluded_note"]
+
+
+def test_without_the_negation_the_drum_loop_is_a_legitimate_match():
+    """Guards the guard: the exclusion must come from the word "no", not from a change in
+    how drums rank."""
+    with db() as path:
+        _add_drums_and_strings(path)
+        r = sidecar.find(query="dark sad drums", db_path=path)
+        assert r["results"][0]["path"].endswith("Dark Garage 130 bpm.wav")
+        assert "excluded" not in r
+
+
+def test_a_query_that_is_only_a_negation_still_answers():
+    with db() as path:
+        _add_drums_and_strings(path)
+        r = sidecar.find(query="no drums", db_path=path)
+        paths = [x["path"] for x in r["results"]]
+        assert r"C:\Orch\Solo Sustain 01.wav" in paths
+        assert not any("Garage" in p or "Drums" in p for p in paths), paths
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

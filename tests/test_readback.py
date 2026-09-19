@@ -123,6 +123,32 @@ def test_set_by_display_writes_exactly_once():
     assert abs(gain.value - 0.625) < 0.002
 
 
+def test_set_by_display_costs_a_handful_of_round_trips_not_forty():
+    """While Live plays, one call costs 0.5-0.8 s. A forty-step bisection was 24 s to turn
+    one knob; the grid search asks 33 questions per round-trip."""
+    class Counting(FakeBridge):
+        trips = 0
+
+        def get_many(self, pairs):
+            Counting.trips += 1
+            return [FakeBridge.get(self, p, prop) for p, prop in pairs]
+
+        def batch(self, ops):
+            Counting.trips += 1
+            return [{"ok": True, "result": self.call(o["params"]["path"], o["params"]["func"],
+                                                     *o["params"]["args"])} for o in ops]
+
+        def set(self, path, prop, value):
+            Counting.trips += 1
+            return FakeBridge.set(self, path, prop, value)
+
+    gain = FakeParam(0.0, 1.0, lambda v: -24.0 + 48.0 * v,
+                     label=lambda v: "%.2f dB" % (-24.0 + 48.0 * v))
+    out = api.Live(Counting({"p": gain})).set_by_display("p", "-7.3 dB")
+    assert abs(float(out["display"].split()[0]) + 7.3) < 0.02, out
+    assert Counting.trips <= 5, Counting.trips          # props + <=3 grids + the write
+
+
 def test_a_fader_that_reads_minus_infinity_at_the_bottom_still_bisects():
     import math
     fader = FakeParam(0.0, 1.0, lambda v: v,
