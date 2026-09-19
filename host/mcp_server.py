@@ -500,6 +500,16 @@ TOOLS = [
                      ".als file's mtime). Refuses on a never-saved set. Briefly moves focus "
                      "to Live."),
      "inputSchema": _schema({"timeout": {"type": "number"}}, [])},
+    {"name": "live_save_clip",
+     "description": ("Save ONE clip as a file the user can drag back in: a MIDI clip becomes "
+                     "a .mid (notes, tempo, time signature — notes only, not the "
+                     "instrument), an audio clip a copy of its source sample. Saved to "
+                     "User Library > AI Bridge > Clips, which is in Live's browser; then "
+                     "switches to Session View so the user can drag it into a track. Tell "
+                     "the user the returned path. path = e.g. 'live_set tracks 0 "
+                     "clip_slots 0 clip' or 'live_set tracks 0 arrangement_clips 0'."),
+     "inputSchema": _schema({"path": _PATH, "name": {"type": "string"},
+                             "show_session": {"type": "boolean"}}, ["path"])},
     {"name": "live_export",
      "description": ("Render the arrangement to a WAV by driving Live's export dialog "
                      "(inherits last-used export settings; file type must be WAV). Give "
@@ -834,6 +844,10 @@ def run_tool(name: str, args: dict):
     if name == "live_save_set":
         import render
         return render.save_set(b, **args)
+    if name == "live_save_clip":
+        import clip_export
+        return clip_export.save_clip(b, args["path"], args.get("name"),
+                                     bool(args.get("show_session", True)))
     if name == "live_export":
         import render
         return render.export_set(b, args["output_path"],
