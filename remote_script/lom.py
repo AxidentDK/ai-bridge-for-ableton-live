@@ -192,6 +192,12 @@ def _ref(obj, path):
     name = getattr(obj, "name", None)
     if isinstance(name, str):
         ref["name"] = name
+    # Routing objects (output_routing_type, input_routing_channel, ...) have no `name`,
+    # only `display_name`; without it a routing read is an opaque handle ("Main",
+    # "Ext. Out 1/2" were unreadable in the 2026-09-19 test run).
+    shown = getattr(obj, "display_name", None)
+    if isinstance(shown, str):
+        ref["display_name"] = shown
     ptr = getattr(obj, "_live_ptr", None)
     if isinstance(ptr, int):
         ref["id"] = ptr

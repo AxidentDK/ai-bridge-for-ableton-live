@@ -1,4 +1,4 @@
-# What the bridge can do — all 63 tools
+# What the bridge can do — all 64 tools
 
 Every tool below is reachable from any MCP client connected to the bridge. You do not
 call them by name: you ask for what you want in plain language and the assistant picks.
@@ -38,7 +38,8 @@ named tools are the ergonomic layer on top, not the limit.
 | Tool | What it does |
 |---|---|
 | `live_get` | Read any property of any LOM object |
-| `live_set` | Write any writable property |
+| `live_set` | Write any writable property (a parameter write answers with Live's display value, e.g. "-24 dB") |
+| `live_set_display` | Set a parameter by the value Live displays ("-3 dB", "200 ms", "1/16"), never by its raw 0..1 number |
 | `live_call` | Call any function on any LOM object |
 | `live_batch` | Many LOM operations in ONE round-trip (max 500) |
 | `live_children` | Introspect an object: type, properties, functions |

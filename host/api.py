@@ -148,52 +148,71 @@ class Live:
         hi = float(self.b.get(path, "max"))
         quantized = bool(self.b.get(path, "is_quantized"))
 
-        def shown():
-            return self.b.get(path, "display_value")
-
         def number(text):
-            m = re.search(r"-?\d+(?:\.\d+)?", str(text).replace(",", "."))
-            return float(m.group()) if m else None
+            # In BASE units, because Live changes the prefix along one parameter: an EQ
+            # frequency reads "10.0 Hz" at the bottom and "22.0 kHz" at the top, a time
+            # "500 ms" then "1.00 s". Comparing the bare numbers made 186 Hz "out of range".
+            m = re.search(r"(-?\d+(?:\.\d+)?)\s*([A-Za-z%°]*)",
+                          str(text).replace(",", ".").replace("−", "-"))
+            if not m:
+                return None
+            scale = {"khz": 1e3, "ms": 1e-3, "us": 1e-6, "µs": 1e-6}.get(m.group(2).lower(), 1.0)
+            return float(m.group(1)) * scale
 
-        if quantized:
+        def label(raw):
+            # The TEXT Live shows. display_value is the index for list-like parameters
+            # (an arpeggiator's rate reads 6.0 there and "1/16" here), and Live does not
+            # flag all of them as quantized — so the target's shape decides the route.
+            return str(self.b.call(path, "str_for_value", raw))
+
+        names_a_step = not re.fullmatch(r"[+-]?\d+(?:[.,]\d+)?\s*[A-Za-z%°]*", want)
+        if quantized or names_a_step:
             options = []
+            squash = lambda s: re.sub(r"\s+", "", s).lower()          # noqa: E731
             for raw in range(int(lo), int(hi) + 1):
-                self.b.set(path, "value", raw)
-                text = str(shown())
+                text = label(raw)
                 options.append(text)
-                if text.strip().lower() == want.lower():
-                    return {"path": path, "value": raw, "display": text, "matched": "exact"}
+                if squash(text) == squash(want):
+                    self.b.set(path, "value", raw)
+                    return {"path": path, "value": raw, "display": text, "asked_for": want}
             raise ValueError("no setting of %r reads %r; it offers: %s"
                              % (path, want, ", ".join(options)))
 
         goal = number(want)
         if goal is None:
             raise ValueError("%r is not a number; this parameter is continuous" % want)
-        # Live's display can be non-monotonic only in pathological cases; the bisection
-        # assumes the usual monotone map and is verified by the final read-back.
-        self.b.set(path, "value", lo)
-        at_lo = number(shown())
-        self.b.set(path, "value", hi)
-        at_hi = number(shown())
+
+        # The search NEVER writes. str_for_value answers "what would raw X display?"
+        # without touching the parameter, so the only write is the final one. The first
+        # version probed by writing min and max, and a refused target left a master
+        # limiter at +24 dB (field-hit 2026-09-19, on the day it was written).
+        def would_show(raw):
+            text = label(raw).replace("−", "-")
+            if "inf" in text.lower():
+                return float("-inf")
+            return number(text)
+
+        at_lo, at_hi = would_show(lo), would_show(hi)
         if at_lo is None or at_hi is None:
-            raise ValueError("%r does not display a number (it shows %r)" % (path, shown()))
+            raise ValueError("%r does not display a number (it shows %r)" % (path, label(lo)))
         rising = at_hi >= at_lo
         if not (min(at_lo, at_hi) <= goal <= max(at_lo, at_hi)):
             raise ValueError("%r can only reach %s to %s, not %s" % (path, at_lo, at_hi, goal))
         a, b = lo, hi
+        mid = (a + b) / 2.0
         for _ in range(iterations):
             mid = (a + b) / 2.0
-            self.b.set(path, "value", mid)
-            got = number(shown())
+            got = would_show(mid)
             if got is None:
                 break
-            if abs(got - goal) < 0.005 * max(1.0, abs(goal)):
+            if abs(got - goal) < 0.0005 * max(1.0, abs(goal)):
                 break
             if (got < goal) == rising:
                 a = mid
             else:
                 b = mid
-        return {"path": path, "value": self.b.get(path, "value"), "display": shown(),
+        self.b.set(path, "value", mid)
+        return {"path": path, "value": self.b.get(path, "value"), "display": label(mid),
                 "asked_for": want}
 
     # --- surgical note editing (by note id) ----------------------------------------------

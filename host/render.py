@@ -357,21 +357,40 @@ RENDERED_MAIN = 0             # menu order: Main, All Individual Tracks, ...
 RENDERED_ALL_INDIVIDUAL = 1
 
 
-# 'Render Start' and 'Render Length' value boxes, relative to the dialog's top-left
-# (measured on Live 12.4.6, default UI zoom; None = not measured on this platform yet,
-# in which case the loop brace is relied on as before).
-_RENDER_START_OFFSET = None
-_RENDER_LENGTH_OFFSET = None
+# 'Render Start' / 'Render Length' value boxes, relative to the dialog's top-left, in the
+# pixels Live draws (it ignores Windows DPI scaling; measured on Live 12.4.6 at default UI
+# zoom). Each box is THREE segments — bars . beats . sixteenths — and a click selects one
+# segment, which the typed digits then replace. Typing "33.1.1" in one go into a segment
+# produced 9.3.3 (field-hit 2026-09-19); one segment at a time produced 33.1.1.
+_RENDER_ROW_START, _RENDER_ROW_LENGTH = 96, 118
+_RENDER_SEGMENT_X = (232, 258, 277)          # bars, beats, sixteenths
+_RENDER_FIELDS_MEASURED = winui.IS_WINDOWS
 
 
-def _bars_beats(beats: float, numerator: int, denominator: int) -> str:
-    """Beats → Live's 'bars.beats.sixteenths' field text, 1-based, 4/4 = '33.1.1'."""
+def _bars_beats(beats: float, numerator: int, denominator: int, *,
+                position: bool = True) -> tuple[int, int, int]:
+    """Beats → (bars, beats, sixteenths) as Live's fields count them.
+
+    A POSITION is 1-based ('33.1.1' is the start of bar 33); a LENGTH is a duration and
+    0-based ('1.0.0' is exactly one bar). Same arithmetic, different origin.
+    """
     beats_per_bar = numerator * 4.0 / denominator
     bar = int(beats // beats_per_bar)
     rest = beats - bar * beats_per_bar
     beat = int(rest)
     sixteenth = int(round((rest - beat) * 4))
-    return "%d.%d.%d" % (bar + 1, beat + 1, sixteenth + 1)
+    if sixteenth == 4:                        # rounding carried into the next beat
+        beat, sixteenth = beat + 1, 0
+    base = 1 if position else 0
+    return (bar + base, beat + base, sixteenth + base)
+
+
+def _type_digits(text: str) -> None:
+    """Digits as virtual-key presses. Live's value boxes ignore KEYEVENTF_UNICODE text."""
+    for ch in text:
+        vk = 0x30 + int(ch)
+        winui.send_keys([(vk, False), (vk, True)])
+        time.sleep(0.05)
 
 
 def _set_render_range(bridge, start_beats: float, length_beats: float) -> None:
@@ -380,9 +399,9 @@ def _set_render_range(bridge, start_beats: float, length_beats: float) -> None:
     Live's export dialog prefers a leftover Arrangement time-selection over the loop
     brace, silently. Creating a clip leaves such a selection, so a 4-beat request
     rendered 96 bars (field-hit 2026-09-19, three times). Writing the fields makes the
-    selection irrelevant. Skipped when the offsets are not measured for this platform.
+    selection irrelevant. Skipped where the field positions are not measured.
     """
-    if _RENDER_START_OFFSET is None or _RENDER_LENGTH_OFFSET is None:
+    if not _RENDER_FIELDS_MEASURED:
         return
     dlg = winui.find_window_by_title(EXPORT_DIALOG_TITLE)
     if not dlg:
@@ -390,14 +409,15 @@ def _set_render_range(bridge, start_beats: float, length_beats: float) -> None:
     num = int(bridge.get("live_set", "signature_numerator") or 4)
     den = int(bridge.get("live_set", "signature_denominator") or 4)
     left, top, _right, _bottom = winui.window_rect(dlg)
-    for (dx, dy), text in ((_RENDER_START_OFFSET, _bars_beats(start_beats, num, den)),
-                           (_RENDER_LENGTH_OFFSET, _bars_beats(length_beats, num, den))):
-        winui.click_at(left + dx, top + dy)
-        time.sleep(0.2)
-        winui.send_keys(winui.chord(winui.VK_CONTROL, winui.VK_A))
-        winui.type_text(text)
-        winui.send_keys(winui.chord(winui.VK_RETURN))
-        time.sleep(0.3)
+    rows = ((_RENDER_ROW_START, _bars_beats(start_beats, num, den, position=True)),
+            (_RENDER_ROW_LENGTH, _bars_beats(length_beats, num, den, position=False)))
+    for dy, parts in rows:
+        for dx, value in zip(_RENDER_SEGMENT_X, parts):
+            winui.click_at(left + dx, top + dy)
+            time.sleep(0.25)
+            _type_digits(str(value))
+            winui.send_keys(winui.chord(winui.VK_RETURN))
+            time.sleep(0.3)
 
 
 def _set_rendered_track(item_index: int, dialog_delay: float) -> None:
@@ -499,14 +519,18 @@ def _wait_for_dialog(title: str, timeout: float):
 def _dismiss_export_dialog() -> None:
     """Close a leftover export dialog so a failed attempt does not poison the next one."""
     for title in (SAVE_DIALOG_TITLE, EXPORT_DIALOG_TITLE):
-        hwnd = winui.find_window_by_title(title)
-        if hwnd:
+        # Escape more than once: with a value box being edited, the first Escape only
+        # cancels that edit and the dialog stays (seen 2026-09-19).
+        for _ in range(4):
+            hwnd = winui.find_window_by_title(title)
+            if not hwnd:
+                break
             try:
                 winui.focus_window(hwnd, attempts=3)
                 winui.send_keys(winui.chord(winui.VK_ESCAPE))
                 time.sleep(0.4)
             except Exception:  # noqa: BLE001 — best effort, the caller reports the real error
-                pass
+                break
 
 
 def _drive_export_dialog(output_path: str, dialog_delay: float,

@@ -4,7 +4,7 @@
 
 > ## ✅ Version 1.0 — stable, and ready to be relied on.
 > The bridge is feature-complete and its whole test suite is green: **154 tests**, and
-> every tool verified against a running Ableton Live 12.4.3. **63 tools** cover the Live
+> every tool verified against a running Ableton Live 12.4.3. **64 tools** cover the Live
 > Object Model, and the four generic ones reach **563 operations across 21 object types**
 > — every one listed by name in [docs/LOM_REFERENCE.md](docs/LOM_REFERENCE.md).
 >
@@ -253,7 +253,7 @@ Two halves over a local socket:
   is single-threaded and is never touched off-thread.
 - **Host** (outside Live) — a dependency-free Python client
   (`host/client.py`), an ergonomic layer (`host/api.py`), and a zero-dependency
-  **MCP stdio server** (`host/mcp_server.py`, 63 tools).
+  **MCP stdio server** (`host/mcp_server.py`, 64 tools).
 
 Wire protocol: length-prefixed JSON frames (4-byte big-endian length + UTF-8
 JSON). Request/response with ids, plus unsolicited event frames for
@@ -302,13 +302,13 @@ at the maintainer's discretion — see [CONTRIBUTING.md](CONTRIBUTING.md).
 aren't obvious (switching views, why similarity search needs folders added as
 *Places*, what the descriptions will and won't claim).
 
-**What it can do:** [docs/TOOLS.md](docs/TOOLS.md) — all 63 tools and what each one
+**What it can do:** [docs/TOOLS.md](docs/TOOLS.md) — all 64 tools and what each one
 does, grouped. You never call them by name, but you cannot ask for something you did
 not know was possible.
 
 **How far the coverage goes:** [docs/LOM_REFERENCE.md](docs/LOM_REFERENCE.md) — every
 property and function the bridge reaches, by name: **563 operations across 21 object
-types**, read from a running Live rather than copied from a manual. The 63 named tools
+types**, read from a running Live rather than copied from a manual. The 64 named tools
 are an ergonomic layer over this, not a limit on it.
 
 **Wire protocol:** [docs/PROTOCOL.md](docs/PROTOCOL.md) — everything needed to talk

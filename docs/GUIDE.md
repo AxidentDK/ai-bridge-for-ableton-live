@@ -10,7 +10,7 @@ places where Live needs something from you first.
 "load Wavetable on track 2", "how loud is the bass track?", "find sounds like that
 snare". If it can be done through Live's API, it can be asked for.
 
-**[TOOLS.md](TOOLS.md) lists all 63 tools** and what each one does. You never call them
+**[TOOLS.md](TOOLS.md) lists all 64 tools** and what each one does. You never call them
 by name — the assistant picks — but it is worth a skim, because you cannot ask for
 something you did not know was possible.
 
