@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -104,6 +105,25 @@ OUT_OF_QUOTA = ("You've used today's free Gemini allowance, or this key has no q
                 "can take about a day to register — so try again later rather than now.")
 
 
+def _quota_message(detail: str, model: str) -> str:
+    """The two facts Google's 429 actually carries, in words: WHICH model ran out, and
+    WHEN it comes back. Quotas are per model, so the way out tonight is usually one click
+    away in the Model list — worth saying, because nothing else on screen suggests it
+    (field-hit 2026-09-19: 250 requests/day on the Pro model, gone mid-session)."""
+    wait = re.search(r"retry in\s+(?:(\d+)h)?(?:(\d+)m)?", detail)
+    when = ""
+    if wait and (wait.group(1) or wait.group(2)):
+        hours, minutes = int(wait.group(1) or 0), int(wait.group(2) or 0)
+        when = (" Google says it comes back in about %s."
+                % ("%d h %02d min" % (hours, minutes) if hours else "%d minutes" % minutes))
+    per_day = "per_day" in detail or "PerDay" in detail
+    if per_day:
+        return ("%s has used up today's allowance on this key.%s Each model has its own "
+                "allowance, so you can carry on now by picking another one under Model."
+                % (model, when))
+    return OUT_OF_QUOTA + when
+
+
 def _is_bad_key(code: int, detail: str) -> bool:
     """Google says an invalid key two ways: HTTP 400 with API_KEY_INVALID in the body, or
     HTTP 403 for a key whose project has the API turned off. Both mean the same to the
@@ -164,7 +184,8 @@ def post(body: dict, key: str, *, model: str = DEFAULT_MODEL, timeout: int = 300
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:900]
             if exc.code == 429 and _is_out_of_credit(detail):
-                raise GeminiError(OUT_OF_QUOTA, status=429, detail=detail) from None
+                raise GeminiError(_quota_message(detail, model), status=429,
+                                  detail=detail) from None
             if _is_bad_key(exc.code, detail):
                 raise GeminiError(BAD_KEY, status=exc.code, detail=detail) from None
             if exc.code in _RETRY_CODES and attempt < attempts:
