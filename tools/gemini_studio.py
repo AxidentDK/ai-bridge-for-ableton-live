@@ -450,6 +450,11 @@ class StudioWindow:
                 system=gemini_tools.PRODUCER_PREAMBLE, on_event=on_event,
                 history=self.history,
                 should_stop=self.stop_flag.is_set, interject=self._take_pending,
+                # A composing job runs to dozens of rounds; 24 (the CLI default) ended a
+                # five-minute orchestral piece in the middle. At the cap Gemini checks
+                # in rather than stops, so a higher number costs nothing but patience —
+                # and Stop is there for the impatient.
+                max_steps=60,
                 on_retry=lambda message: self.events.put(("retry", {"message": message})))
         except gemini_client.GeminiError as exc:
             self.events.put(("failed", {"message": str(exc), "detail": exc.detail}))
@@ -516,7 +521,10 @@ class StudioWindow:
                         self._say("who_model", "\nGemini\n")
                         self._say(None, reply + "\n")
                         self.log.append("model", reply)
-                        if why != "answered":
+                        if why.startswith(gemini_tools.PAUSED):
+                            self._say("dim", f"\nChecking in ({why}). Say \"continue\" "
+                                             "to let it carry on, or change course.\n")
+                        elif why != "answered":
                             self._say("err", f"\n⚠ stopped: {why}\n")
                     failed = sum(1 for s in result["steps"] if not s["ok"])
                     steps = len(result["steps"])

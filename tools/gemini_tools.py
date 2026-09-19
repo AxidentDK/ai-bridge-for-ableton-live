@@ -325,6 +325,14 @@ def _text_of(content: dict) -> str:
 
 
 STOPPED_BY_USER = "stopped by you"
+PAUSED = "paused after"
+
+#: Sent when the step cap is reached, with tool calls switched off for that one answer.
+#: The cap used to end the run with nothing said, which left a half-built set and no
+#: explanation; a person can only say "continue" if they are told where things stand.
+PAUSE_PROMPT = ("[You have used {n} rounds of tool calls, so this is a check-in, not the "
+                "end. Do not call any tools now. Say briefly what you have done so far, "
+                "what is still left, and stop. The producer will tell you to continue.]")
 
 
 def drive(task, key, *, run_tool, tools, post, model=None, system=None, max_steps=24,
@@ -439,5 +447,19 @@ def drive(task, key, *, run_tool, tools, post, model=None, system=None, max_step
             return {"text": "", "steps": steps, "history": history,
                     "stopped_because": STOPPED_BY_USER}
 
-    return {"text": "", "steps": steps, "history": history,
-            "stopped_because": f"hit max_steps={max_steps}"}
+    # The cap: a check-in, not a wall. One more request with function calling switched
+    # off, so the only thing Gemini can do is say where it got to. The history then ends
+    # with a model turn, and "continue" is an ordinary next question.
+    history[-1] = {"role": "user", "parts": list(history[-1]["parts"]) +
+                   [{"text": PAUSE_PROMPT.format(n=max_steps)}]}
+    body = {"contents": history, "tools": [{"functionDeclarations": declarations}],
+            "toolConfig": {"functionCallingConfig": {"mode": "NONE"}}}
+    if system:
+        body["systemInstruction"] = {"parts": [{"text": system}]}
+    payload = post(body, key, **options)
+    candidates = payload.get("candidates") or []
+    content = (candidates[0].get("content") if candidates else None) or {}
+    if content:
+        history.append(content)
+    return {"text": _text_of(content), "steps": steps, "history": history,
+            "stopped_because": f"{PAUSED} {max_steps} rounds"}
