@@ -20,8 +20,9 @@ from client import BridgeError                                        # noqa: E4
 class FakeParam:
     """A DeviceParameter whose display is a function of its raw value."""
 
-    def __init__(self, lo, hi, show, quantized=False):
+    def __init__(self, lo, hi, show, quantized=False, label=None):
         self.lo, self.hi, self.show, self.quantized = lo, hi, show, quantized
+        self.label = label or (lambda v: str(show(v)))
         self.value = lo
 
 
@@ -47,7 +48,8 @@ class FakeBridge:
         return True
 
     def call(self, path, func, *args):
-        pass
+        if func == "str_for_value" and path in self.params:
+            return self.params[path].label(args[0])
 
 
 # --- parameters answer in Live's units ---------------------------------------------------
@@ -57,27 +59,76 @@ def test_set_by_display_bisects_a_continuous_parameter():
     gain = FakeParam(0.0, 1.0, lambda v: -24.0 + 48.0 * v)
     live = api.Live(FakeBridge({"p": gain}))
     out = live.set_by_display("p", "-3 dB")
-    assert abs(out["display"] - (-3.0)) < 0.05, out
+    assert abs(float(out["display"]) - (-3.0)) < 0.05, out
     assert abs(gain.value - 0.4375) < 0.002, gain.value
 
 
-def test_set_by_display_matches_a_quantized_parameter_by_text():
-    """An arpeggiator rate is a list index; '1/16' is a name, not a number."""
+def test_a_parameter_whose_unit_prefix_changes_along_its_range():
+    """EQ Eight's frequency: '10.0 Hz' at the bottom, '22.0 kHz' at the top. Read as bare
+    numbers that is a range of 10..22 and '186 Hz' is refused (field-hit 2026-09-19)."""
+    import math
+
+    def label(v):
+        hz = 10.0 * (2200.0 ** v)
+        return "%.1f kHz" % (hz / 1000.0) if hz >= 1000 else "%.1f Hz" % hz
+
+    freq = FakeParam(0.0, 1.0, lambda v: v, label=label)
+    live = api.Live(FakeBridge({"p": freq}))
+    out = live.set_by_display("p", "186 Hz")
+    assert out["display"].startswith("186"), out
+    out = live.set_by_display("p", "5.5 kHz")
+    assert out["display"] == "5.5 kHz", out
+    assert abs(10.0 * (2200.0 ** freq.value) - 5500) < 60, math.log(freq.value)
+
+
+def test_set_by_display_matches_a_list_parameter_by_its_text():
+    """An arpeggiator rate, as the real Live presents it (field-hit 2026-09-19): NOT flagged
+    quantized, display_value is the INDEX, and only str_for_value says '1/16'. Parsing the
+    target as a number turned '1/8' into 1."""
     names = ["1/1", "1/2", "1/4", "1/6", "1/8", "1/12", "1/16", "1/32"]
-    rate = FakeParam(0, 7, lambda v: names[int(v)], quantized=True)
+    rate = FakeParam(0, 7, lambda v: float(v), quantized=False,
+                     label=lambda v: names[int(v)])
     live = api.Live(FakeBridge({"p": rate}))
     out = live.set_by_display("p", "1/16")
     assert out["value"] == 6 and out["display"] == "1/16", out
-
-
-def test_set_by_display_refuses_what_the_range_cannot_reach():
-    gain = FakeParam(0.0, 1.0, lambda v: -24.0 + 48.0 * v)
+    assert rate.value == 6
     try:
-        api.Live(FakeBridge({"p": gain})).set_by_display("p", "+40 dB")
+        live.set_by_display("p", "1/7")
+    except ValueError as exc:
+        assert "1/6, 1/8" in str(exc), exc       # the error lists what IS offered
+    else:
+        raise AssertionError("accepted a rate that does not exist")
+
+
+def test_set_by_display_refuses_what_the_range_cannot_reach_and_touches_nothing():
+    """The first version probed the range by WRITING min and max, so a refused '+40 dB'
+    left a real master limiter at +24 dB. The search must not write at all."""
+    gain = FakeParam(0.0, 1.0, lambda v: -24.0 + 48.0 * v)
+    gain.value = 0.5
+    fake = FakeBridge({"p": gain})
+    try:
+        api.Live(fake).set_by_display("p", "+40 dB")
     except ValueError as exc:
         assert "-24.0 to 24.0" in str(exc), exc
     else:
         raise AssertionError("accepted an unreachable value")
+    assert gain.value == 0.5 and fake.sets == [], fake.sets
+
+
+def test_set_by_display_writes_exactly_once():
+    gain = FakeParam(0.0, 1.0, lambda v: -24.0 + 48.0 * v)
+    fake = FakeBridge({"p": gain})
+    api.Live(fake).set_by_display("p", "6 dB")
+    assert len(fake.sets) == 1, fake.sets
+    assert abs(gain.value - 0.625) < 0.002
+
+
+def test_a_fader_that_reads_minus_infinity_at_the_bottom_still_bisects():
+    import math
+    fader = FakeParam(0.0, 1.0, lambda v: v,
+                      label=lambda v: "-inf dB" if v <= 0 else "%.1f dB" % (40 * math.log10(v) + 6))
+    out = api.Live(FakeBridge({"p": fader})).set_by_display("p", "-12 dB")
+    assert abs(float(out["display"].split()[0]) + 12.0) < 0.1, out
 
 
 def test_a_raw_value_write_answers_with_the_display_value():
@@ -146,12 +197,15 @@ def test_a_soloed_track_is_named_in_the_export_result():
     assert "warning" not in render._mix_state(FakeBridge(props={"live_set.tracks": []}))
 
 
-def test_beats_become_live_field_text():
-    assert render._bars_beats(0, 4, 4) == "1.1.1"
-    assert render._bars_beats(128, 4, 4) == "33.1.1"
-    assert render._bars_beats(4, 4, 4) == "2.1.1"
-    assert render._bars_beats(5.5, 4, 4) == "2.2.3"
-    assert render._bars_beats(6, 3, 4) == "3.1.1"          # 3/4: 3 beats per bar
+def test_beats_become_live_field_segments():
+    bb = render._bars_beats
+    assert bb(0, 4, 4) == (1, 1, 1)                      # a position is 1-based
+    assert bb(128, 4, 4) == (33, 1, 1)
+    assert bb(5.5, 4, 4) == (2, 2, 3)
+    assert bb(6, 3, 4) == (3, 1, 1)                      # 3/4: 3 beats per bar
+    assert bb(4, 4, 4, position=False) == (1, 0, 0)      # a length is a duration
+    assert bb(384, 4, 4, position=False) == (96, 0, 0)
+    assert bb(2.75, 4, 4, position=False) == (0, 2, 3)
 
 
 def test_the_tool_list_has_the_display_setter():
