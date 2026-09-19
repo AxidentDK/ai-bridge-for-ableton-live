@@ -1,0 +1,50 @@
+# Build the Windows installer on GitHub's servers instead of a developer's PC.
+#
+# WHY. Code signing through the SignPath Foundation requires the signed file to come out
+# of an automated build, so the certificate vouches for "built from this commit" rather
+# than "built on someone's machine". It also removes a quiet dependency: installer\build.ps1
+# copies tkinter out of a full Python install, and locally that meant C:\Python314.
+#
+# Signing is NOT done here yet — the SignPath application is pending. When it is approved,
+# a signing step is added after "Build installer" and the unsigned artifact goes away.
+
+name: Build installer
+
+on:
+  workflow_dispatch:            # run by hand from the Actions tab
+  push:
+    tags: ['v*']                # and for every release tag
+
+permissions:
+  contents: read
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # MUST equal the embeddable Python bundled by build.ps1 (its -PyVersion default):
+      # _tkinter.pyd is copied from this install and only loads into the exact same
+      # interpreter version. build.ps1 refuses to build if they differ.
+      - name: Set up Python (source of tkinter)
+        id: py
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14.3'
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $pyRoot = Split-Path '${{ steps.py.outputs.python-path }}' -Parent
+          ./installer/build.ps1 -PyVersion 3.14.3 -FullPython $pyRoot
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: AI-Bridge-Setup-unsigned
+          path: dist/AI-Bridge-Setup-*.exe
+          if-no-files-found: error
