@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from client import Bridge, BridgeError  # noqa: E402
@@ -607,23 +608,36 @@ TOOLS = [
 _bridge: Bridge | None = None
 _PORT = int(os.environ.get("AI_BRIDGE_PORT", "8766"))  # overridable for tests
 
+#: One connection, one request in flight. The stdio loop is single-threaded, but Gemini
+#: Studio calls in from several threads (a Live check, the sound-index warm-up, the
+#: answer itself), and two of them at once produced WinError 10038: one thread was
+#: replacing the socket while the other was still reading it. Re-entrant because
+#: run_tool → bridge() takes it twice.
+_lock = threading.RLock()
+
 
 def bridge() -> Bridge:
     global _bridge
-    if _bridge is None:
-        _bridge = Bridge(port=_PORT)
-    try:
-        _bridge.ping()
-    except Exception:
+    with _lock:
+        if _bridge is None:
+            _bridge = Bridge(port=_PORT)
         try:
-            _bridge.close()
+            _bridge.ping()
         except Exception:
-            pass
-        _bridge = Bridge(port=_PORT)  # Live restarted — reconnect
-    return _bridge
+            try:
+                _bridge.close()
+            except Exception:
+                pass
+            _bridge = Bridge(port=_PORT)  # Live restarted — reconnect
+        return _bridge
 
 
 def run_tool(name: str, args: dict):
+    with _lock:
+        return _dispatch(name, args)
+
+
+def _dispatch(name: str, args: dict):
     b = bridge()
     if name == "live_ping":
         return b.ping()

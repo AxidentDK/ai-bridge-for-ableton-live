@@ -97,6 +97,7 @@ class StudioWindow:
         self.live_label = tk.Label(top, text="", bg=BG, fg=DIM, font=self.body)
         self.live_label.pack(side="right")
         self.live_ok: bool | None = None
+        self._recheck = None                      # pending after() id, so checks never pile up
 
         wrap = tk.Frame(root, bg=BG)
         wrap.pack(fill="both", expand=True, padx=10, pady=(8, 0))
@@ -282,7 +283,7 @@ class StudioWindow:
         def work():
             try:
                 import mcp_server                                     # noqa: PLC0415
-                mcp_server.bridge().ping()
+                mcp_server.run_tool("live_ping", {})   # through the lock, like every call
                 self.events.put(("live", {"ok": True}))
             except Exception as exc:                                  # noqa: BLE001
                 self.events.put(("live", {"ok": False, "detail": f"{type(exc).__name__}: "
@@ -303,6 +304,16 @@ class StudioWindow:
         if was is not False:
             self._say("err", f"\n{LIVE_DOWN}\n")
             self.log.append("error", f"{LIVE_DOWN}\n{detail}")
+        # Keep looking, quietly: a Live that is still loading its set turns green by
+        # itself, without the user having to find the menu item.
+        if self._recheck is not None:
+            self.root.after_cancel(self._recheck)
+        self._recheck = self.root.after(10_000, self._recheck_live)
+
+    def _recheck_live(self) -> None:
+        self._recheck = None
+        if self.live_ok is False and self.root.winfo_exists():
+            self._check_live()
 
     def _say(self, tag: str, text: str) -> None:
         self.view.configure(state="normal")
