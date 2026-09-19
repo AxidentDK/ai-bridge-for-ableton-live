@@ -369,8 +369,6 @@ class StudioWindow:
                 elif kind == "models":
                     names = fields["names"]
                     self.model_box.configure(values=names)
-                    self._say("dim",
-                              f"\n{len(names)} models reachable with your key.\n")
                     self._idle()
                 elif kind == "retry":
                     self._set_busy(True, fields["message"])

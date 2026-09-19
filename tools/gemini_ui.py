@@ -184,6 +184,6 @@ class KeyDialog(tk.Toplevel):
         path = save_key(key)
         self.on_saved(key, [name for name, _ in payload])
         messagebox.showinfo("Key saved",
-                            f"{len(payload)} models reachable.\nSaved to {path}",
+                            f"Saved to {path}",
                             parent=self)
         self.destroy()
