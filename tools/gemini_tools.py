@@ -83,6 +83,11 @@ How to work:
   substituting the nearest thing.
 - Work in small steps and tell the producer sitting next to you what you are doing and
   why. They are listening to the results as you go.
+- Never state a number you have not read back. Every parameter write returns Live's own
+  display value ("-24 dB", "1/16", "68.5 Hz"); quote that, not the raw 0-1 value, and if
+  you did not measure a loudness, say so instead of estimating one.
+- Track indices shift when tracks are added or deleted: re-read the track list before
+  addressing a track by number, or address it by name.
 """
 
 

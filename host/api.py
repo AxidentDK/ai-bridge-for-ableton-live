@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import sys
 import time
 
@@ -107,7 +108,9 @@ class Live:
     def devices(self, track: int) -> list[dict]:
         return self.b.get(f"live_set tracks {track}", "devices")
 
-    _PARAM_PROPS = ("name", "value", "min", "max")
+    # display_value is what Live shows on the device ("-24 dB", "1/16", "68.5 Hz"). Without
+    # it a model reads 0.0 and calls it unity; with it the number explains itself.
+    _PARAM_PROPS = ("name", "value", "min", "max", "display_value")
 
     def parameters(self, track: int, device: int) -> list[dict]:
         """All parameters of a device — batched into TWO round-trips total.
@@ -127,6 +130,71 @@ class Live:
     def set_parameter(self, track: int, device: int, parameter: int, value: float):
         self.b.set(f"live_set tracks {track} devices {device} parameters {parameter}",
                    "value", float(value))
+
+    def set_by_display(self, path: str, target, iterations: int = 40) -> dict:
+        """Set a parameter by the value LIVE DISPLAYS — "-3 dB", "200 ms", "1/16" — not by
+        its raw number.
+
+        Live's raw scale is whatever the device chose: a Limiter's Input Gain runs 0..1 for
+        -24..+24 dB, an EQ Eight gain is already in dB, an Arpeggiator rate is an index into
+        a list. There is no inverse of display_value in the API, so this searches: for a
+        quantized parameter it tries each step and matches the text; for a continuous one
+        it bisects the raw range until the displayed number is within tolerance. Every
+        probe is a real write, and the last one is the answer, so the parameter ends up
+        exactly where Live says it is.
+        """
+        want = str(target).strip()
+        lo = float(self.b.get(path, "min"))
+        hi = float(self.b.get(path, "max"))
+        quantized = bool(self.b.get(path, "is_quantized"))
+
+        def shown():
+            return self.b.get(path, "display_value")
+
+        def number(text):
+            m = re.search(r"-?\d+(?:\.\d+)?", str(text).replace(",", "."))
+            return float(m.group()) if m else None
+
+        if quantized:
+            options = []
+            for raw in range(int(lo), int(hi) + 1):
+                self.b.set(path, "value", raw)
+                text = str(shown())
+                options.append(text)
+                if text.strip().lower() == want.lower():
+                    return {"path": path, "value": raw, "display": text, "matched": "exact"}
+            raise ValueError("no setting of %r reads %r; it offers: %s"
+                             % (path, want, ", ".join(options)))
+
+        goal = number(want)
+        if goal is None:
+            raise ValueError("%r is not a number; this parameter is continuous" % want)
+        # Live's display can be non-monotonic only in pathological cases; the bisection
+        # assumes the usual monotone map and is verified by the final read-back.
+        self.b.set(path, "value", lo)
+        at_lo = number(shown())
+        self.b.set(path, "value", hi)
+        at_hi = number(shown())
+        if at_lo is None or at_hi is None:
+            raise ValueError("%r does not display a number (it shows %r)" % (path, shown()))
+        rising = at_hi >= at_lo
+        if not (min(at_lo, at_hi) <= goal <= max(at_lo, at_hi)):
+            raise ValueError("%r can only reach %s to %s, not %s" % (path, at_lo, at_hi, goal))
+        a, b = lo, hi
+        for _ in range(iterations):
+            mid = (a + b) / 2.0
+            self.b.set(path, "value", mid)
+            got = number(shown())
+            if got is None:
+                break
+            if abs(got - goal) < 0.005 * max(1.0, abs(goal)):
+                break
+            if (got < goal) == rising:
+                a = mid
+            else:
+                b = mid
+        return {"path": path, "value": self.b.get(path, "value"), "display": shown(),
+                "asked_for": want}
 
     # --- surgical note editing (by note id) ----------------------------------------------
     def edit_notes(self, clip_path: str, edits: list[dict] | None = None,

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import socket
 import sys
 import threading
 
@@ -52,9 +54,21 @@ TOOLS = [
      "description": "Read any property of any Live Object Model object.",
      "inputSchema": _schema({"path": _PATH, "prop": {"type": "string"}}, ["path", "prop"])},
     {"name": "live_set",
-     "description": "Write any writable property of any Live Object Model object.",
+     "description": ("Write any writable property of any Live Object Model object. Writing a "
+                     "parameter's `value` answers with Live's display_value too ('-24 dB', "
+                     "'1/16', '68.5 Hz'): quote THAT, never the raw number. Raw scales are "
+                     "per device (a limiter's gain is 0..1 for -24..+24 dB, an EQ gain is "
+                     "already dB, a rate is a list index) — to set by the displayed unit use "
+                     "live_set_display."),
      "inputSchema": _schema({"path": _PATH, "prop": {"type": "string"}, "value": {}},
                             ["path", "prop", "value"])},
+    {"name": "live_set_display",
+     "description": ("Set a device or mixer parameter by the value LIVE DISPLAYS — '-3 dB', "
+                     "'200 ms', '1/16', '440 Hz' — instead of its raw 0..1 number. Searches "
+                     "the parameter's range until Live's display_value matches, and returns "
+                     "the final display. Use this for every dB/Hz/ms/rate setting."),
+     "inputSchema": _schema({"path": _PATH, "display": {"type": "string"}},
+                            ["path", "display"])},
     {"name": "live_call",
      "description": "Call any function on any Live Object Model object (args are JSON scalars).",
      "inputSchema": _schema({"path": _PATH, "func": {"type": "string"},
@@ -137,9 +151,12 @@ TOOLS = [
     {"name": "live_browse",
      "description": ("List/filter loadable items in a browser category (instruments, "
                      "midi_effects, audio_effects, plugins, max_for_live, drums, sounds) — "
-                     "use it to find the exact name to pass to live_load_device. Raise "
-                     "max_depth to see nested items: the plugins category's top level is "
-                     "VENDOR FOLDERS, so depth 1 shows no plugins at all."),
+                     "use it to find the exact name to pass to live_load_device. "
+                     "`instruments` holds DEVICE names (Wavetable, Operator, Drum Rack); "
+                     "PRESETS such as 'Glass High Strings Pad' or a timpani kit are under "
+                     "`sounds` (and `drums`), so search there for an instrument by sound. "
+                     "Raise max_depth to see nested items: the plugins category's top level "
+                     "is VENDOR FOLDERS, so depth 1 shows no plugins at all."),
      "inputSchema": _schema({"category": {"type": "string"}, "query": {"type": "string"},
                              "limit": {"type": "integer"},
                              "max_depth": {"type": "integer"}}, ["category"])},
@@ -435,8 +452,11 @@ TOOLS = [
                              "from_pitch": {"type": "integer"}, "pitch_span": {"type": "integer"}},
                             ["path"])},
     {"name": "live_clip_envelope",
-     "description": ("Write parameter automation into a clip: insert envelope steps for one "
-                     "device/mixer parameter (filter sweeps, fades — movement over time). "
+     "description": ("Write parameter automation into a SESSION clip: insert envelope steps "
+                     "for one device/mixer parameter (filter sweeps, fades — movement over "
+                     "time). Live's API exposes clip envelopes on Session clips only; on an "
+                     "Arrangement clip it answers 'Not a session clip' (arrangement "
+                     "automation belongs to the track and is not reachable here). "
                      "path = the clip; parameter = the DeviceParameter's LOM path (e.g. "
                      "'live_set tracks 0 devices 0 parameters 5' or 'live_set tracks 0 "
                      "mixer_device volume'). Each step: {time (beats), value, length? "
@@ -634,7 +654,58 @@ def bridge() -> Bridge:
 
 def run_tool(name: str, args: dict):
     with _lock:
-        return _dispatch(name, args)
+        try:
+            return _dispatch(name, args)
+        except (TimeoutError, socket.timeout) as exc:
+            # Live's main thread is busy — rendering, loading a set, or behind a modal
+            # dialog. A bare "timed out" invites retries that queue up behind it.
+            raise RuntimeError(
+                "Live did not answer within the timeout. It is probably rendering, "
+                "loading, or showing a dialog; wait for that to finish and try again "
+                "(%s)" % exc) from None
+        except BridgeError as exc:
+            hint = _signature_hint(str(exc))
+            if hint:
+                raise BridgeError({"type": exc.type, "message": "%s — %s" % (exc.message, hint),
+                                   "detail": exc.detail}) from None
+            raise
+
+
+def _signature_hint(message: str) -> str | None:
+    """Turn Live's raw Boost.Python complaint into the one thing the caller needs.
+
+        Python argument types in
+            Track.create_midi_clip(Track)
+        did not match C++ signature:
+            create_midi_clip(class TTrackPyHandle, double, double)
+
+    says, to a person, "this needs two numbers". Say that. The first C++ parameter is
+    always the object itself; the rest are the real arguments.
+    """
+    if "did not match C++ signature" not in message:
+        return None
+    m = re.search(r"C\+\+ signature:\s*(\w+)\((.*?)\)", message, re.S)
+    if not m:
+        return None
+    func, params = m.group(1), [p.strip() for p in m.group(2).split(",") if p.strip()]
+    wanted = params[1:]
+    kinds = {"double": "number", "float": "number", "int": "integer", "bool": "true/false",
+             "unsigned int": "integer"}
+    words = []
+    for p in wanted:
+        low = p.lower()
+        words.append(next((v for k, v in kinds.items() if low == k), "an object handle"
+                          if "handle" in low else p))
+    known = {"create_midi_clip": "(start_beats, length_beats)",
+             "delete_clip": "(the clip OBJECT, e.g. resolve 'live_set tracks 0 arrangement_clips 0' and pass its $ref, not a number)",
+             "duplicate_clip_to_arrangement": "(the clip object, destination_time_beats)",
+             "insert_device": "(category, name, index) via live_load_device instead"}
+    if func in known:
+        return "%s needs %s" % (func, known[func])
+    if not wanted:
+        return "%s takes no arguments" % func
+    return "%s needs %d argument%s: %s" % (func, len(wanted), "" if len(wanted) == 1 else "s",
+                                            ", ".join(words))
 
 
 def _dispatch(name: str, args: dict):
@@ -652,7 +723,20 @@ def _dispatch(name: str, args: dict):
     if name == "live_get":
         return b.get(args["path"], args["prop"])
     if name == "live_set":
-        return b.set(args["path"], args["prop"], args["value"])
+        result = b.set(args["path"], args["prop"], args["value"])
+        if args["prop"] == "value":
+            # A parameter write answers with what Live now DISPLAYS. Field-hit
+            # 2026-09-19: a model wrote 0.0 to a limiter's gain meaning "unity", which was
+            # -24 dB, and reported the mix as "breathing" — the raw True hid it.
+            try:
+                return {"ok": result, "value": b.get(args["path"], "value"),
+                        "display": b.get(args["path"], "display_value")}
+            except Exception:
+                return result
+        return result
+    if name == "live_set_display":
+        from api import Live
+        return Live(b).set_by_display(args["path"], args["display"])
     if name == "live_call":
         return b.call(args["path"], args["func"], *(args.get("args") or []))
     if name == "live_batch":

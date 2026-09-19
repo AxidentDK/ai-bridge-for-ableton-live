@@ -126,7 +126,8 @@ class ParamBridge:
         out = []
         for path, prop in pairs:
             i = int(path.split()[-1])
-            out.append({"name": f"P{i}", "value": float(i), "min": 0.0, "max": 1.0}[prop])
+            out.append({"name": f"P{i}", "value": float(i), "min": 0.0, "max": 1.0,
+                        "display_value": f"{i} dB"}[prop])
         return out
 
 
@@ -135,7 +136,8 @@ def test_parameters_batched_two_wire_calls():
     params = Live(b).parameters(track=0, device=0)
     assert b.wire_calls == 2  # count + one batched read — not 1 + 66*4
     assert len(params) == 66
-    assert params[0] == {"index": 0, "name": "P0", "value": 0.0, "min": 0.0, "max": 1.0}
+    assert params[0] == {"index": 0, "name": "P0", "value": 0.0, "min": 0.0, "max": 1.0,
+                         "display_value": "0 dB"}
     assert params[65]["name"] == "P65" and params[65]["value"] == 65.0
 
 

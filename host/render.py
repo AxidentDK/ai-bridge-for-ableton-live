@@ -139,13 +139,13 @@ def export_set(
     expected_s = None
     if start_beats is not None:
         bridge.call("live_set", "stop_playing")
-        bridge.set("live_set", "loop_start", float(start_beats))
-        bridge.set("live_set", "loop_length", float(length_beats))
-        bridge.set("live_set", "loop", True)
+        _set_loop_brace(bridge, float(start_beats), float(length_beats))
         tempo = float(bridge.get("live_set", "tempo"))
         expected_s = float(length_beats) * 60.0 / tempo
 
-    _drive_export_dialog(output_path, dialog_delay)
+    mix_state = _mix_state(bridge)
+    _drive_export_dialog(output_path, dialog_delay, start_beats=start_beats,
+                         length_beats=length_beats, bridge=bridge)
 
     deadline = time.monotonic() + max(10.0, float(timeout))
     last_size = -1
@@ -159,6 +159,7 @@ def export_set(
                 elif time.monotonic() - stable_since >= 1.5:
                     result = _read_wav_result(output_path)
                     if result is not None:
+                        result.update(mix_state)
                         return _check_duration(result, expected_s)
                     stable_since = None  # header not finalized yet
             else:
@@ -214,9 +215,7 @@ def export_stems(
     expected_s = None
     if start_beats is not None:
         bridge.call("live_set", "stop_playing")
-        bridge.set("live_set", "loop_start", float(start_beats))
-        bridge.set("live_set", "loop_length", float(length_beats))
-        bridge.set("live_set", "loop", True)
+        _set_loop_brace(bridge, float(start_beats), float(length_beats))
         tempo = float(bridge.get("live_set", "tempo"))
         expected_s = float(length_beats) * 60.0 / tempo
 
@@ -270,6 +269,46 @@ def export_stems(
     }
 
 
+def _set_loop_brace(bridge, start_beats: float, length_beats: float) -> None:
+    """Move the loop brace, shrinking it before moving it.
+
+    Live refuses a loop_start that would push the brace's END past the arrangement
+    ("Cannot set the Loopstart behind the Songlength"). With the brace at 0–384, asking
+    for start 128 first does exactly that. Setting the length first keeps every
+    intermediate state legal. (Gemini diagnosed this one itself, 2026-09-19.)
+    """
+    bridge.set("live_set", "loop_length", float(length_beats))
+    bridge.set("live_set", "loop_start", float(start_beats))
+    bridge.set("live_set", "loop_length", float(length_beats))
+    bridge.set("live_set", "loop", True)
+
+
+def _mix_state(bridge) -> dict:
+    """Which tracks are soloed or muted — said in the result, because the file cannot.
+
+    The person at the desk solos a track to listen while the model renders; the model
+    then measures a solo as if it were the mix (field-hit 2026-09-19: three renders of
+    one track, "fixed" with +17 dB of limiter gain). Read-only, and forgiving: a set
+    that cannot be read for some reason still exports.
+    """
+    state = {"soloed": [], "muted": []}
+    try:
+        tracks = bridge.get("live_set", "tracks") or []
+        for i, _t in enumerate(tracks):
+            path = "live_set tracks %d" % i
+            name = str(bridge.get(path, "name"))
+            if bridge.get(path, "solo"):
+                state["soloed"].append(name)
+            if bridge.get(path, "mute"):
+                state["muted"].append(name)
+    except Exception:  # noqa: BLE001 — a diagnostic must never block the render
+        return {}
+    if state["soloed"]:
+        state["warning"] = ("solo_active: %s is soloed, so this render contains that "
+                            "track only, not the mix" % ", ".join(state["soloed"]))
+    return state
+
+
 def _read_wav_result(path: str):
     try:
         with wave.open(path, "rb") as handle:
@@ -316,6 +355,49 @@ _RENDERED_TRACK_OFFSET = (217, 75)
 _EXPORT_BUTTON_OFFSET = (117, 37)
 RENDERED_MAIN = 0             # menu order: Main, All Individual Tracks, ...
 RENDERED_ALL_INDIVIDUAL = 1
+
+
+# 'Render Start' and 'Render Length' value boxes, relative to the dialog's top-left
+# (measured on Live 12.4.6, default UI zoom; None = not measured on this platform yet,
+# in which case the loop brace is relied on as before).
+_RENDER_START_OFFSET = None
+_RENDER_LENGTH_OFFSET = None
+
+
+def _bars_beats(beats: float, numerator: int, denominator: int) -> str:
+    """Beats → Live's 'bars.beats.sixteenths' field text, 1-based, 4/4 = '33.1.1'."""
+    beats_per_bar = numerator * 4.0 / denominator
+    bar = int(beats // beats_per_bar)
+    rest = beats - bar * beats_per_bar
+    beat = int(rest)
+    sixteenth = int(round((rest - beat) * 4))
+    return "%d.%d.%d" % (bar + 1, beat + 1, sixteenth + 1)
+
+
+def _set_render_range(bridge, start_beats: float, length_beats: float) -> None:
+    """Type Render Start / Render Length into the dialog's own fields.
+
+    Live's export dialog prefers a leftover Arrangement time-selection over the loop
+    brace, silently. Creating a clip leaves such a selection, so a 4-beat request
+    rendered 96 bars (field-hit 2026-09-19, three times). Writing the fields makes the
+    selection irrelevant. Skipped when the offsets are not measured for this platform.
+    """
+    if _RENDER_START_OFFSET is None or _RENDER_LENGTH_OFFSET is None:
+        return
+    dlg = winui.find_window_by_title(EXPORT_DIALOG_TITLE)
+    if not dlg:
+        return
+    num = int(bridge.get("live_set", "signature_numerator") or 4)
+    den = int(bridge.get("live_set", "signature_denominator") or 4)
+    left, top, _right, _bottom = winui.window_rect(dlg)
+    for (dx, dy), text in ((_RENDER_START_OFFSET, _bars_beats(start_beats, num, den)),
+                           (_RENDER_LENGTH_OFFSET, _bars_beats(length_beats, num, den))):
+        winui.click_at(left + dx, top + dy)
+        time.sleep(0.2)
+        winui.send_keys(winui.chord(winui.VK_CONTROL, winui.VK_A))
+        winui.type_text(text)
+        winui.send_keys(winui.chord(winui.VK_RETURN))
+        time.sleep(0.3)
 
 
 def _set_rendered_track(item_index: int, dialog_delay: float) -> None:
@@ -398,19 +480,60 @@ def _click_export_button(timeout: float = 8.0):
         "dropdown is stuck open; check the Live window" % SAVE_DIALOG_TITLE)
 
 
+def _wait_for_dialog(title: str, timeout: float):
+    """Poll for a dialog instead of sleeping a fixed time.
+
+    A fixed 1.5 s was enough on an empty set and not on a six-track one: the dialog
+    came up later, the tool had already declared it missing, and the dialog then sat
+    open and modal so every retry failed on focus (field-hit 2026-09-19).
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        hwnd = winui.find_window_by_title(title)
+        if hwnd:
+            return hwnd
+        time.sleep(0.2)
+    return None
+
+
+def _dismiss_export_dialog() -> None:
+    """Close a leftover export dialog so a failed attempt does not poison the next one."""
+    for title in (SAVE_DIALOG_TITLE, EXPORT_DIALOG_TITLE):
+        hwnd = winui.find_window_by_title(title)
+        if hwnd:
+            try:
+                winui.focus_window(hwnd, attempts=3)
+                winui.send_keys(winui.chord(winui.VK_ESCAPE))
+                time.sleep(0.4)
+            except Exception:  # noqa: BLE001 — best effort, the caller reports the real error
+                pass
+
+
 def _drive_export_dialog(output_path: str, dialog_delay: float,
-                         rendered_track: int = RENDERED_MAIN) -> None:
+                         rendered_track: int = RENDERED_MAIN,
+                         start_beats=None, length_beats=None, bridge=None) -> None:
     if winui.IS_WINDOWS:
         hwnd = winui.find_live_window()
         if hwnd is None:
             raise ExportError("No Ableton Live main window found")
+        _dismiss_export_dialog()
         winui.focus_window(hwnd)
         winui.send_keys(winui.chord(winui.VK_CONTROL, winui.VK_SHIFT, winui.VK_R))
-        time.sleep(dialog_delay)                                  # export settings dialog
-        # force the 'Rendered Track' mode — the dialog remembers the LAST-used
-        # one, so relying on it silently renders the wrong thing (e.g. stems
-        # after a stems export). Deterministic beats remembered.
-        _set_rendered_track(rendered_track, dialog_delay)
+        if not _wait_for_dialog(EXPORT_DIALOG_TITLE, max(8.0, dialog_delay * 4)):
+            raise ExportError(
+                "the '%s' dialog did not appear within 8 s (is Live's window visible, "
+                "or is it still loading?)" % EXPORT_DIALOG_TITLE)
+        time.sleep(0.3)
+        try:
+            # force the 'Rendered Track' mode — the dialog remembers the LAST-used
+            # one, so relying on it silently renders the wrong thing (e.g. stems
+            # after a stems export). Deterministic beats remembered.
+            _set_rendered_track(rendered_track, dialog_delay)
+            if start_beats is not None and bridge is not None:
+                _set_render_range(bridge, float(start_beats), float(length_beats))
+        except Exception:
+            _dismiss_export_dialog()
+            raise
         # CLICK 'Export' — do NOT press Enter here. After the dropdown was
         # clicked, keyboard focus stays on it and Enter RE-OPENS the menu; the
         # path typed next then acts as menu type-ahead and silently selects a
