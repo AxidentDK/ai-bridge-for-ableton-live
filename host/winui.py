@@ -64,40 +64,58 @@ def find_live_window():
     return found[0] if found else None
 
 
-def focus_window(hwnd, settle: float = 0.25) -> None:
+def focus_window(hwnd, settle: float = 0.25, attempts: int = 8) -> None:
     """Bring a window to the foreground and VERIFY it got there.
 
-    AttachThreadInput to the current foreground thread defeats focus-stealing
-    prevention; without it the keystrokes can land in whatever app is frontmost.
+    Windows only honours SetForegroundWindow from the process that IS the foreground
+    or that produced the last input event. AttachThreadInput to the foreground
+    thread covers the first case; it does NOT cover a caller that is neither — which
+    is exactly this bridge when Gemini Studio (or anything else) is in front.
+    Field-hit 2026-09-19: four identical "cannot bring Live to the foreground"
+    failures in a row while the user typed in Studio.
+
+    The fix is the documented trick: tap the Alt key ourselves first. That makes this
+    process the source of the last input, after which SetForegroundWindow is allowed.
+    Repeated a few times with a short wait, because focus changes settle
+    asynchronously and a single attempt can lose a race with the app we are leaving.
     """
     import ctypes
 
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
     SW_RESTORE = 9
+    VK_MENU = 0x12
 
-    if user32.IsIconic(hwnd):
-        user32.ShowWindow(hwnd, SW_RESTORE)
-
-    fg = user32.GetForegroundWindow()
-    if fg == hwnd:
-        return
-    fg_thread = user32.GetWindowThreadProcessId(fg, None)
-    me = kernel32.GetCurrentThreadId()
-    attached = bool(user32.AttachThreadInput(me, fg_thread, True)) if fg else False
-    try:
-        user32.ShowWindow(hwnd, SW_RESTORE)
-        user32.BringWindowToTop(hwnd)
-        user32.SetForegroundWindow(hwnd)
-    finally:
-        if attached:
-            user32.AttachThreadInput(me, fg_thread, False)
-    time.sleep(settle)
-    if user32.GetForegroundWindow() != hwnd:
-        raise UiError(
-            "Could not bring the Ableton Live window to the foreground (another "
-            "application is holding focus). Bring Live to the front and retry."
-        )
+    for attempt in range(attempts):
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, SW_RESTORE)
+        fg = user32.GetForegroundWindow()
+        if fg == hwnd:
+            return
+        if attempt:
+            # An Alt tap on its own would open Live's menu bar: pair it with a
+            # SetForegroundWindow before the key-up so the key never reaches a menu.
+            send_keys([(VK_MENU, False)])
+        fg_thread = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+        me = kernel32.GetCurrentThreadId()
+        attached = bool(user32.AttachThreadInput(me, fg_thread, True)) if fg_thread else False
+        try:
+            user32.ShowWindow(hwnd, SW_RESTORE)
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+        finally:
+            if attached:
+                user32.AttachThreadInput(me, fg_thread, False)
+            if attempt:
+                send_keys([(VK_MENU, True)])
+        time.sleep(settle)
+        if user32.GetForegroundWindow() == hwnd:
+            return
+        time.sleep(0.3)
+    raise UiError(
+        "Could not bring the Ableton Live window to the foreground (another "
+        "application is holding focus). Bring Live to the front and retry."
+    )
 
 
 def _input_structs():

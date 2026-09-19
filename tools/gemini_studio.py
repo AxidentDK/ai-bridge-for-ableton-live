@@ -328,7 +328,11 @@ class StudioWindow:
         self.view.see("end")
 
     def _idle(self) -> None:
-        turns = len(self.history) // 2
+        # Count what the person said, not history entries: tool calls and their results
+        # are user/model turns too, and a long job made "146 exchanges" out of five.
+        turns = sum(1 for h in self.history
+                    if h.get("role") == "user"
+                    and any("text" in p for p in h.get("parts") or []))
         remembered = ("nothing remembered yet" if not turns else
                       f"{turns} exchange{'' if turns == 1 else 's'} remembered")
         self.status.configure(text=f"{pretty_model(self.model)} · {remembered}", fg=DIM)

@@ -72,20 +72,31 @@ Get-ChildItem $py -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recur
 # Drop Tk's demo programs: 1 MB of examples nobody installing a bridge needs.
 Remove-Item "$py\tcl\tk8.6\demos" -Recurse -Force -ErrorAction SilentlyContinue
 
+# numpy, for live_analyze_wav. Without it the installed Studio cannot measure anything, and
+# a model that cannot measure states a loudness anyway (field-hit 2026-09-19: "-16 LUFS"
+# claimed, -10.8 measured). Installed with the FULL Python's pip into the bundle's own
+# site-packages — same interpreter version, so the wheel matches.
+Step 'Adding numpy'
+$site = Join-Path $py 'Lib\site-packages'
+& "$FullPython\python.exe" -m pip install --quiet --no-deps --target $site numpy 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'pip could not install numpy into the bundle' }
+Get-ChildItem $site -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force
+Remove-Item "$site\numpy\_core\tests", "$site\numpy\*\tests" -Recurse -Force -ErrorAction SilentlyContinue
+
 # An embeddable Python ignores PYTHONPATH and does NOT put the script's own folder on
 # sys.path — the ._pth file is the whole search path. So the bridge's folders go in here,
 # or every `import mcp_server` from a tool would fail on a user's machine and nowhere else.
 $pth = Get-ChildItem $py -Filter 'python*._pth' | Select-Object -First 1
 $zipName = (Get-ChildItem $py -Filter 'python*.zip' | Select-Object -First 1).Name
-@($zipName, '.', 'Lib', '..\app', '..\app\host', '..\app\tools') | Set-Content $pth.FullName -Encoding ascii
+@($zipName, '.', 'Lib', 'Lib\site-packages', '..\app', '..\app\host', '..\app\tools') | Set-Content $pth.FullName -Encoding ascii
 
 # --- prove the bundle before compiling it --------------------------------------------
 Step 'Smoke test of the bundled Python'
 $check = @'
 import sys, tkinter
 r = tkinter.Tk(); r.withdraw(); tcl = r.tk.call('info', 'patchlevel'); r.destroy()
-import mcp_server, gemini_studio
-print(f"python {sys.version.split()[0]}  tk {tcl}  tools {len(mcp_server.TOOLS)}")
+import mcp_server, gemini_studio, numpy
+print(f"python {sys.version.split()[0]}  tk {tcl}  numpy {numpy.__version__}  tools {len(mcp_server.TOOLS)}")
 '@
 $out = & "$py\python.exe" -c $check 2>&1
 if ($LASTEXITCODE -ne 0) { throw "bundled Python failed its smoke test:`n$out" }
