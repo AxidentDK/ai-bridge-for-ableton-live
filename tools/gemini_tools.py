@@ -324,9 +324,22 @@ def _text_of(content: dict) -> str:
                      if isinstance(part, dict) and "text" in part).strip()
 
 
+STOPPED_BY_USER = "stopped by you"
+
+
 def drive(task, key, *, run_tool, tools, post, model=None, system=None, max_steps=24,
-          include=None, on_event=None, timeout=300, on_retry=None, history=None) -> dict:
+          include=None, on_event=None, timeout=300, on_retry=None, history=None,
+          should_stop=None, interject=None) -> dict:
     """Let Gemini work the tools until it answers in words, or until ``max_steps``.
+
+    ``should_stop()`` and ``interject()`` are how the person at the window gets a word
+    in while Gemini is busy — the two things a chat has that a batch job does not.
+    Both are read between steps, after the current tool calls have been answered, so
+    the history is always valid: a model turn that asked for tools is always followed
+    by their results. ``should_stop()`` true ends the run there, with everything done so
+    far kept in the history. ``interject()`` returns text (or None) that rides along in
+    the same user turn as the tool results, so Gemini reads it before deciding its next
+    move — the way a mid-turn message reaches an assistant.
 
     ``run_tool(name, args)`` executes one call and returns anything JSON-serialisable, or
     raises. ``post(body, key, ...)`` is the transport — injected so this loop is testable
@@ -351,7 +364,14 @@ def drive(task, key, *, run_tool, tools, post, model=None, system=None, max_step
     """
     declarations, stringified = to_declarations(tools, include)
     history = list(history or [])
-    history.append({"role": "user", "parts": [{"text": task}]})
+    if history and history[-1].get("role") == "user":
+        # The previous run was stopped, so the history ends with tool results and no
+        # model turn. The new question joins that turn: two user turns in a row is the
+        # shape the API rejects.
+        history[-1] = {"role": "user",
+                       "parts": list(history[-1].get("parts") or []) + [{"text": task}]}
+    else:
+        history.append({"role": "user", "parts": [{"text": task}]})
     steps: list = []
 
     def emit(kind, **fields):
@@ -409,7 +429,15 @@ def drive(task, key, *, run_tool, tools, post, model=None, system=None, max_step
             emit("result", step=step, name=name, ok=ok, error=note, result=payload_out)
             parts.append(response_part(call, payload_out))
 
+        said = interject() if interject else None
+        if said:
+            parts.append({"text": said})
+            emit("interject", step=step, text=said)
         history.append({"role": "user", "parts": parts})
+
+        if should_stop and should_stop():
+            return {"text": "", "steps": steps, "history": history,
+                    "stopped_because": STOPPED_BY_USER}
 
     return {"text": "", "steps": steps, "history": history,
             "stopped_because": f"hit max_steps={max_steps}"}

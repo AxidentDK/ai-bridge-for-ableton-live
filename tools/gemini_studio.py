@@ -72,6 +72,10 @@ class StudioWindow:
         self.events: queue.Queue = queue.Queue()
         self.busy = False
         self.blocked: list = []
+        # The two ways to get a word in while Gemini works. Both are read by the loop
+        # between steps, on the worker thread; the window only ever writes them.
+        self.stop_flag = threading.Event()
+        self.pending: queue.Queue = queue.Queue()      # comments typed while busy
         self.log = gemini_client.Transcript(gemini_tools.SESSION_DIR, label="studio",
                                             model=self.model)
 
@@ -157,6 +161,8 @@ class StudioWindow:
                   "library, audition and load them, write clips, play.\n"
                   "You will see each step it takes as it happens. Enter sends · "
                   "Shift+Enter for a new line.\n"
+                  "While it works you can keep typing — Enter hands your comment to "
+                  "Gemini at its next step — and the Send button becomes Stop.\n"
                   "It can never save your set — that stays your key press, so nothing "
                   "here can write over your work.\n")
         self._idle()
@@ -329,12 +335,40 @@ class StudioWindow:
 
     def _set_busy(self, busy: bool, message: str = "") -> None:
         self.busy = busy
-        self.send_button.configure(state="disabled" if busy else "normal",
-                                   text="Working…" if busy else "Send")
         if busy:
-            self.status.configure(text=message or "thinking…", fg=DIM)
+            if not self.stop_flag.is_set():
+                self.send_button.configure(state="normal", text="Stop", command=self.stop)
+            self.status.configure(
+                text=f"{message or 'working…'} · Enter adds a comment, Stop interrupts",
+                fg=DIM)
         else:
+            self.send_button.configure(state="normal", text="Send", command=self.send)
             self._idle()
+
+    def stop(self) -> None:
+        """Ask the loop to end after its current step. Nothing already done is undone."""
+        self.stop_flag.set()
+        self.send_button.configure(state="disabled", text="Stopping…")
+        self.status.configure(text="stopping after the current step…", fg=DIM)
+
+    def _take_pending(self) -> str | None:
+        """Worker thread: everything typed since the last step, as one message."""
+        lines = []
+        try:
+            while True:
+                lines.append(self.pending.get_nowait())
+        except queue.Empty:
+            pass
+        return "\n".join(lines) or None
+
+    def _return_undelivered(self) -> None:
+        """A run ended before Gemini read a queued comment. Put it back in the box
+        rather than silently dropping it, or delivering it later out of context."""
+        text = self._take_pending()
+        if text:
+            self.entry.insert("1.0", text)
+            self._say("dim", "\n(Gemini stopped before reading your comment — it's back "
+                             "in the box, send it when you like.)\n")
 
     def _on_return(self, event):
         if event.state & 0x0001:                       # Shift held: a newline, not a send
@@ -378,8 +412,6 @@ class StudioWindow:
     # ---- the work ----------------------------------------------------------------------
 
     def send(self) -> None:
-        if self.busy:
-            return
         typed = self.entry.get("1.0", "end").strip()
         if not typed:
             return
@@ -387,9 +419,17 @@ class StudioWindow:
             self.ask_for_key()
             return
         self.entry.delete("1.0", "end")
+        if self.busy:
+            # Queued, not sent: it goes to Gemini with the results of the step it is on.
+            self._say("who_user", "\nYou (while it works)\n")
+            self._say(None, typed + "\n")
+            self.log.append("user-comment", typed)
+            self.pending.put(typed)
+            return
         self._say("who_user", "\nYou\n")
         self._say(None, typed + "\n")
         self.log.append("user", typed)
+        self.stop_flag.clear()
         self._set_busy(True)
         threading.Thread(target=self._work, args=(typed,), daemon=True).start()
 
@@ -409,6 +449,7 @@ class StudioWindow:
                 tools=mcp_server.TOOLS, post=gemini_client.post, model=self.model,
                 system=gemini_tools.PRODUCER_PREAMBLE, on_event=on_event,
                 history=self.history,
+                should_stop=self.stop_flag.is_set, interject=self._take_pending,
                 on_retry=lambda message: self.events.put(("retry", {"message": message})))
         except gemini_client.GeminiError as exc:
             self.events.put(("failed", {"message": str(exc), "detail": exc.detail}))
@@ -444,6 +485,9 @@ class StudioWindow:
                     self._idle()
                 elif kind == "live":
                     self._on_live(fields["ok"], fields.get("detail", ""))
+                elif kind == "interject":
+                    self._say("dim", "     → your comment went to Gemini with this step\n")
+                    self.log.append("tool", "     → comment delivered")
                 elif kind == "retry":
                     self._set_busy(True, fields["message"])
                 elif kind == "failed":
@@ -454,6 +498,7 @@ class StudioWindow:
                     self.log.append("error", fields["message"] +
                                     (f"\n\n```\n{detail}\n```" if detail else ""))
                     self._set_busy(False)
+                    self._return_undelivered()
                     self._check_live()
                 elif kind == "done":
                     result = fields["result"]
@@ -461,18 +506,25 @@ class StudioWindow:
                     # conversation exactly as it was rather than holding a question with
                     # no answer after it.
                     self.history = result["history"]
-                    reply = result["text"] or "(no closing text)"
-                    self._say("who_model", "\nGemini\n")
-                    self._say(None, reply + "\n")
-                    self.log.append("model", reply)
+                    why = result["stopped_because"]
+                    if why == gemini_tools.STOPPED_BY_USER:
+                        self._say("dim", "\nStopped. Gemini keeps what it did so far in "
+                                         "mind — say what you want next.\n")
+                        self.log.append("model", "(stopped by you)")
+                    else:
+                        reply = result["text"] or "(no closing text)"
+                        self._say("who_model", "\nGemini\n")
+                        self._say(None, reply + "\n")
+                        self.log.append("model", reply)
+                        if why != "answered":
+                            self._say("err", f"\n⚠ stopped: {why}\n")
                     failed = sum(1 for s in result["steps"] if not s["ok"])
-                    if result["stopped_because"] != "answered":
-                        self._say("err", f"\n⚠ stopped: {result['stopped_because']}\n")
                     steps = len(result["steps"])
                     if steps:
                         self._say("dim", f"{steps} step{'' if steps == 1 else 's'}"
                                          f"{f', {failed} failed' if failed else ''}\n")
                     self._set_busy(False)
+                    self._return_undelivered()
                     if failed:
                         # The usual reason a step fails is that Live went away.
                         self._check_live()
