@@ -33,9 +33,10 @@ KEY_PATH = Path.home() / ".ai-bridge" / "gemini_api_key.txt"
 #: rather than by a search.
 KEY_URL = "https://aistudio.google.com/apikey"
 
-#: Shown until the live list arrives. Deliberately short: the real contents come from the
-#: API, because model ids move and a hardcoded list goes stale silently.
-FALLBACK_MODELS = (DEFAULT_MODEL, "gemini-2.5-pro", "gemini-2.5-flash")
+#: Shown until the live list arrives. Deliberately short, and the two extras are Google's
+#: moving aliases rather than dated ids: "gemini-2.5-flash" was still in the API's own
+#: model list on 2026-09-19 while answering 404 "no longer available to new users".
+FALLBACK_MODELS = (DEFAULT_MODEL, "gemini-pro-latest", "gemini-flash-latest")
 
 BG = "#1e1f22"
 PANEL = "#2b2d30"

@@ -239,6 +239,55 @@ def test_a_raising_tool_becomes_an_error_response_and_the_run_continues():
     assert [s["ok"] for s in result["steps"]] == [False, True]
 
 
+def test_stop_ends_the_run_after_the_current_step_with_a_valid_history():
+    """The Stop button. The model turn that asked for a tool must still get its
+    result, or the next request is rejected — so stopping means "after this step"."""
+    script = _Script(*[_calls(("t", {"a": str(i)})) for i in range(10)])
+    seen = []
+    result = T.drive("go", "k", run_tool=lambda n, a: seen.append(a) or {"ok": 1},
+                     tools=_ONE_ARG, post=script, should_stop=lambda: len(seen) >= 2)
+    assert result["stopped_because"] == T.STOPPED_BY_USER
+    assert len(seen) == 2, seen
+    last = result["history"][-1]
+    assert last["role"] == "user" and "functionResponse" in last["parts"][0]
+
+
+def test_after_a_stop_the_next_question_joins_the_trailing_user_turn():
+    """Two user turns in a row is the shape the API rejects."""
+    script = _Script(_calls(("t", {"a": "1"})))
+    stopped = T.drive("go", "k", run_tool=lambda n, a: {"ok": 1}, tools=_ONE_ARG,
+                      post=script, should_stop=lambda: True)
+    script2 = _Script(_text("fine"))
+    T.drive("now do this instead", "k", run_tool=lambda n, a: {}, tools=_ONE_ARG,
+            post=script2, history=stopped["history"])
+    sent = script2.bodies[0]["contents"]
+    roles = [c["role"] for c in sent]
+    assert roles == ["user", "model", "user"], roles
+    assert "functionResponse" in sent[-1]["parts"][0]
+    assert sent[-1]["parts"][-1] == {"text": "now do this instead"}
+    # The caller's history was not edited in place.
+    assert len(stopped["history"][-1]["parts"]) == 1
+
+
+def test_a_comment_typed_mid_run_rides_along_with_the_next_tool_results():
+    """The mid-turn message. It reaches Gemini in the same user turn as the results of
+    the step it interrupted, so it is read before the next decision."""
+    script = _Script(_calls(("t", {"a": "1"})), _calls(("t", {"a": "2"})), _text("ok"))
+    comments = ["warmer, and less busy"]
+    events = []
+    result = T.drive("go", "k", run_tool=lambda n, a: {"ok": 1}, tools=_ONE_ARG,
+                     post=script, interject=lambda: comments.pop() if comments else None,
+                     on_event=lambda k, f: events.append(k))
+    assert result["stopped_because"] == "answered"
+    turn = script.bodies[1]["contents"][2]
+    assert turn["role"] == "user"
+    assert "functionResponse" in turn["parts"][0]
+    assert turn["parts"][-1] == {"text": "warmer, and less busy"}
+    # Only once: the second step's turn has no text part.
+    assert all("text" not in p for p in script.bodies[2]["contents"][4]["parts"])
+    assert "interject" in events
+
+
 def test_the_loop_stops_at_max_steps_rather_than_forever():
     # A model that never stops calling, which is what a genuine loop looks like.
     script = _Script(*[_calls(("t", {"a": str(i)})) for i in range(10)])
