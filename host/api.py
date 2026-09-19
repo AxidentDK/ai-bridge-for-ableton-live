@@ -122,7 +122,18 @@ class Live:
         n = len(self.b.get(path, "parameters"))
         pairs = [(f"{path} parameters {i}", prop)
                  for i in range(n) for prop in self._PARAM_PROPS]
-        values = self.b.get_many(pairs)
+        if hasattr(self.b, "batch"):
+            # TOLERANT, per value. Live itself raises "Invalid display value" for some
+            # parameters (an Arpeggiator's 20th, field-hit 2026-09-19, hours after
+            # display_value was added here), and a strict batch let that one failure
+            # sink the whole device. A value that cannot be read is None; the rest stand.
+            ops = [{"method": "get", "params": {"path": p, "prop": pr}} for p, pr in pairs]
+            values = []
+            for at in range(0, len(ops), 500):
+                values.extend(r.get("result") if r.get("ok") else None
+                              for r in self.b.batch(ops[at:at + 500]))
+        else:
+            values = self.b.get_many(pairs)
         w = len(self._PARAM_PROPS)
         return [dict({"index": i}, **dict(zip(self._PARAM_PROPS, values[i * w:(i + 1) * w])))
                 for i in range(n)]

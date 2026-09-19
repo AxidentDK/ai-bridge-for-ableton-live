@@ -123,6 +123,28 @@ def test_an_exhausted_quota_fails_immediately_and_says_why():
         raise AssertionError("no error raised")
 
 
+def test_a_daily_quota_names_the_model_the_wait_and_the_way_out():
+    """The real 429 from 2026-09-19. It carries which model ran out and when it returns;
+    quotas are per model, so another model is one click away and nothing said so."""
+    detail = json.dumps({"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": (
+        "You exceeded your current quota, please check your plan and billing details. "
+        "* Quota exceeded for metric: generativelanguage.googleapis.com/"
+        "generate_requests_per_model_per_day, limit: 250, model: gemini-3.1-pro\n"
+        "Please retry in 5h6m48.454884201s.")}})
+    transport = _Transport(_http_error(429, detail))
+    _patch(transport)
+    try:
+        G.ask("hi", "key", model="gemini-3.1-pro-preview")
+    except G.GeminiError as exc:
+        text = str(exc)
+        assert transport.calls == 1, "a daily quota must not be retried"
+        assert "gemini-3.1-pro-preview" in text and "5 h 06 min" in text, text
+        assert "another one under Model" in text, text
+        assert "RESOURCE_EXHAUSTED" in exc.detail, "the raw answer belongs in the log"
+    else:
+        raise AssertionError("no error raised")
+
+
 def test_the_key_travels_in_a_header_and_never_in_the_url():
     """So it cannot turn up in an error message, a log line or a proxy access log."""
     seen = {}

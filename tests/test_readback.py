@@ -234,6 +234,31 @@ def test_beats_become_live_field_segments():
     assert bb(2.75, 4, 4, position=False) == (0, 2, 3)
 
 
+def test_one_unreadable_display_value_does_not_sink_the_device():
+    """Live raises "Invalid display value" for some parameters. The read must survive it."""
+    class Bridge:
+        def get(self, path, prop):
+            return [None] * 3
+
+        def batch(self, ops):
+            out = []
+            for op in ops:
+                p, prop = op["params"]["path"], op["params"]["prop"]
+                i = int(p.split()[-1])
+                if prop == "display_value" and i == 1:
+                    out.append({"ok": False, "error": {"type": "live_error",
+                                                       "message": "Invalid display value"}})
+                else:
+                    out.append({"ok": True, "result": {"name": f"P{i}", "value": 0.5, "min": 0.0,
+                                                       "max": 1.0, "display_value": "0 dB"}[prop]})
+            return out
+
+    params = api.Live(Bridge()).parameters(track=5, device=0)
+    assert [p["name"] for p in params] == ["P0", "P1", "P2"]
+    assert params[1]["display_value"] is None and params[1]["value"] == 0.5
+    assert params[0]["display_value"] == "0 dB"
+
+
 def test_a_live_collection_answers_how_many():
     """Live's Vectors have no length attribute; a model asks for one anyway."""
     from remote_script import lom
