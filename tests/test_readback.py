@@ -234,6 +234,32 @@ def test_beats_become_live_field_segments():
     assert bb(2.75, 4, 4, position=False) == (0, 2, 3)
 
 
+def test_a_live_collection_answers_how_many():
+    """Live's Vectors have no length attribute; a model asks for one anyway."""
+    from remote_script import lom
+
+    class Vector:                       # iterable, not a list — like Live's own
+        def __init__(self, items):
+            self._items = items
+
+        def __iter__(self):
+            return iter(self._items)
+
+    class Song:
+        tracks = Vector(["a", "b", "c"])
+        name = "set"
+
+    roots = {"live_set": Song()}
+    assert lom.get(roots, "live_set tracks", "length") == 3
+    assert lom.get(roots, "live_set tracks", "count") == 3
+    try:
+        lom.get(roots, "live_set", "length")          # a Song is not a collection
+    except lom.LomError as exc:
+        assert "no property" in str(exc)
+    else:
+        raise AssertionError("a non-collection answered 'length'")
+
+
 def test_the_tool_list_has_the_display_setter():
     names = {t["name"] for t in mcp_server.TOOLS}
     assert "live_set_display" in names
