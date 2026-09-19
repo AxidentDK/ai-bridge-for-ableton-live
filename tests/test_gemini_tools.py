@@ -288,14 +288,26 @@ def test_a_comment_typed_mid_run_rides_along_with_the_next_tool_results():
     assert "interject" in events
 
 
-def test_the_loop_stops_at_max_steps_rather_than_forever():
-    # A model that never stops calling, which is what a genuine loop looks like.
-    script = _Script(*[_calls(("t", {"a": str(i)})) for i in range(10)])
+def test_the_cap_is_a_check_in_with_tools_switched_off_not_a_silent_wall():
+    """A model that never stops calling, which is what a genuine loop looks like — or a
+    five-minute orchestral piece, which looks the same from here. At the cap Gemini gets
+    one answer with function calling off, so the person hears where it got to and can
+    say "continue". The old behaviour returned nothing at all."""
+    script = _Script(*[_calls(("t", {"a": str(i)})) for i in range(3)],
+                     _text("Loaded strings and brass; the chorus is still to write."))
     result = T.drive("spin", "k", run_tool=lambda n, a: {"again": True},
                      tools=_ONE_ARG, post=script, max_steps=3)
-    assert result["stopped_because"] == "hit max_steps=3", result["stopped_because"]
+    assert result["stopped_because"].startswith(T.PAUSED), result["stopped_because"]
     assert len(result["steps"]) == 3
-    assert result["text"] == ""
+    assert "chorus" in result["text"]
+    last = script.bodies[3]
+    assert last["toolConfig"] == {"functionCallingConfig": {"mode": "NONE"}}, last
+    assert "check-in" in last["contents"][-1]["parts"][-1]["text"]
+    assert "functionResponse" in last["contents"][-1]["parts"][0]
+    # "continue" is then an ordinary next turn: history ends with the model.
+    assert result["history"][-1]["role"] == "model"
+    # No earlier request had calling switched off.
+    assert all("toolConfig" not in b for b in script.bodies[:3])
 
 
 def test_a_non_dict_result_is_wrapped_because_response_must_be_an_object():
