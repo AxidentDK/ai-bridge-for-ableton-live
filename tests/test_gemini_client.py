@@ -231,7 +231,7 @@ def test_exchanges_are_numbered_by_question_not_by_line():
             log.append("user", f"q{i}")
             log.append("model", f"a{i}")
         text = log.path.read_text(encoding="utf-8")
-        assert "## 1. Kim" in text and "## 3. Kim" in text
+        assert "## 1. You" in text and "## 3. You" in text
         assert "## 4." not in text
         log.close()
         assert "3 exchanges" in log.path.read_text(encoding="utf-8")

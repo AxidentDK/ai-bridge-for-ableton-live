@@ -93,8 +93,8 @@ class KeyDialog(tk.Toplevel):
                  font=(body_font.cget("family"), 11, "bold")).pack(anchor="w")
         tk.Label(self, bg=BG, fg=DIM, font=body_font, justify="left", wraplength=430,
                  text=("It is saved to your user profile, outside the program's folder, "
-                       "so it cannot be committed or shared by accident. Nothing is "
-                       "written until the key answers a test call.")).pack(
+                       "so it cannot be shared by accident. Nothing is saved until "
+                       "Google confirms the key works.")).pack(
             anchor="w", pady=(4, 10))
         # Said BEFORE the key is pasted rather than after the limit is hit, or it reads as
         # the tool being broken mid-session.
@@ -153,7 +153,7 @@ class KeyDialog(tk.Toplevel):
                 fg=ERR)
             return
         self.save_button.configure(state="disabled", text="Checking…")
-        self.note.configure(text="asking Google which models this key can reach…", fg=DIM)
+        self.note.configure(text="checking the key with Google…", fg=DIM)
 
         result: queue.Queue = queue.Queue()
 
@@ -178,8 +178,7 @@ class KeyDialog(tk.Toplevel):
             self.save_button.configure(state="normal", text="Check and save")
             # Not saved. A key that cannot list models will not answer a question either,
             # and storing it would only move the failure somewhere less obvious.
-            self.note.configure(text=f"Not saved — the key was rejected.\n{payload[:300]}",
-                                fg=ERR)
+            self.note.configure(text=f"Not saved. {payload[:300]}", fg=ERR)
             return
         path = save_key(key)
         self.on_saved(key, [name for name, _ in payload])
