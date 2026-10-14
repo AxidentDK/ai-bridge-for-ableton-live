@@ -216,7 +216,7 @@ First open needs one extra step because the app is not code-signed yet — see
 [If your computer warns you](#if-your-computer-warns-you).
 
 **Windows — one line in PowerShell**, if you prefer to use your own Python. It downloads
-the bridge, installs it into Live, and puts the same icon on your desktop:
+the latest release, installs it into Live, and puts the same icon on your desktop:
 
 ```powershell
 irm https://raw.githubusercontent.com/AxidentDK/ai-bridge-for-ableton-live/main/install.ps1 | iex

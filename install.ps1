@@ -19,10 +19,8 @@
 $ErrorActionPreference = 'Stop'
 
 $Repo        = 'AxidentDK/ai-bridge-for-ableton-live'
-$Branch      = 'main'
 $AppName     = 'AI Bridge for Ableton Live'
 $InstallRoot = Join-Path $env:LOCALAPPDATA 'AI Bridge'
-$ZipUrl      = "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
 
 function Say  ($m) { Write-Host $m }
 function Step ($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
@@ -61,11 +59,17 @@ Then run this installer again. Nothing has been changed.
 Good "Python $pyVersion  ($py)"
 
 # --- 2. Download ---------------------------------------------------------------------
+# The latest RELEASE, not the tip of the repository: what this installs is the same
+# tested version the setup programs carry, and the release's download counter works.
 Step "Downloading the bridge"
 $tempZip = Join-Path ([System.IO.Path]::GetTempPath()) "ai-bridge-$([guid]::NewGuid()).zip"
 $tempOut = Join-Path ([System.IO.Path]::GetTempPath()) "ai-bridge-$([guid]::NewGuid())"
 try {
-    Invoke-WebRequest -Uri $ZipUrl -OutFile $tempZip -UseBasicParsing
+    $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -UseBasicParsing
+    $source  = $release.assets | Where-Object { $_.name -like 'AI-Bridge-Source-*.zip' } | Select-Object -First 1
+    if (-not $source) { throw "the latest release ($($release.tag_name)) has no AI-Bridge-Source-*.zip" }
+    Good "release $($release.tag_name)"
+    Invoke-WebRequest -Uri $source.browser_download_url -OutFile $tempZip -UseBasicParsing
 } catch {
     Die "Could not download from GitHub.`n  $($_.Exception.Message)`n`nCheck your connection, or download the repository as a ZIP by hand and run install.py inside it."
 }
