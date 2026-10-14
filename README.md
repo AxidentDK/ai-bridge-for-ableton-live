@@ -2,8 +2,20 @@
 
 *(short name: **AI Bridge**)*
 
+> ## ⬇️ Download — no terminal needed
+>
+> **Windows: [Download the installer](https://github.com/AxidentDK/ai-bridge-for-ableton-live/releases/latest/download/AI-Bridge-Setup.exe)** — double-click the file and
+> everything is set up: the bridge goes into Ableton Live and a **Gemini Studio** icon
+> lands on your desktop. It brings its own Python — there is nothing else to install.
+> Two steps remain that only you can do, and the installer shows them.
+>
+> *If Windows says it "protected your PC": click **More info**, then **Run anyway**.
+> The installer is new and not yet code-signed, so Windows does not know it yet.*
+>
+> **Mac:** a drag-and-drop download is on its way. Until then, see [Install](#install).
+
 > ## ✅ Version 1.0 — stable, and ready to be relied on.
-> The bridge is feature-complete and its whole test suite is green: **154 tests**, and
+> The bridge is feature-complete and its whole test suite is green: **215 tests**, and
 > every tool verified against a running Ableton Live 12.4.3. **64 tools** cover the Live
 > Object Model, and the four generic ones reach **563 operations across 21 object types**
 > — every one listed by name in [docs/LOM_REFERENCE.md](docs/LOM_REFERENCE.md).
@@ -174,14 +186,21 @@ your desktop.
 ## What you need
 
 1. **Ableton Live 12** (tested on 12.4, Windows — macOS should work, untested).
-2. **Python 3.10+** — nothing else. No pip packages.
-3. **An AI**: the Claude desktop app, or a free Gemini API key for the Studio window.
+2. **An AI**: the Claude desktop app, or a free Gemini API key for the Studio window.
+3. **Python 3.10+** — only for the one-line and by-hand installs below. The Windows
+   installer brings its own.
 
 ## Install
 
-**Windows — one line.** Paste this into PowerShell. It downloads the bridge, installs it
-into Live, and puts a Gemini Studio icon on your desktop. No admin rights; everything
-lands under your own user profile.
+**Windows — the easy way.**
+**[Download AI-Bridge-Setup.exe](https://github.com/AxidentDK/ai-bridge-for-ableton-live/releases/latest/download/AI-Bridge-Setup.exe)**
+and double-click it. It installs the bridge into Live, puts a **Gemini Studio** icon on
+your desktop, and brings its own Python. No admin rights; everything lands under your
+own user profile. (Windows may say it "protected your PC" — click **More info → Run
+anyway**; the installer is not yet code-signed.)
+
+**Windows — one line in PowerShell**, if you prefer to use your own Python. It downloads
+the bridge, installs it into Live, and puts the same icon on your desktop:
 
 ```powershell
 irm https://raw.githubusercontent.com/AxidentDK/ai-bridge-for-ableton-live/main/install.ps1 | iex
