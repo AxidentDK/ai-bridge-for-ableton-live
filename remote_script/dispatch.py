@@ -13,7 +13,7 @@ from . import envelopes, lom, notes, warp
 #: Kept EQUAL to host/mcp_server.py's SERVER_VERSION: the two halves ship together, so
 #: two different numbers could only ever mislead someone asking whether their remote
 #: script matches their host.
-BRIDGE_VERSION = "1.0.0"
+BRIDGE_VERSION = "1.1.0"
 
 # One batch = one hop onto Live's main thread, which runs its ops back-to-back.
 # The cap keeps a runaway batch from stalling Live's UI for a whole tick.
