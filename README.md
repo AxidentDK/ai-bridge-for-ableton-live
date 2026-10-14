@@ -10,7 +10,8 @@
 > Two steps remain that only you can do, and the installer shows them.
 >
 > *If Windows says it "protected your PC": click **More info**, then **Run anyway**.
-> The installer is new and not yet code-signed, so Windows does not know it yet.*
+> The installer is new and not yet code-signed, so Windows does not know it yet —
+> click-by-click help for Windows and Mac: [If your computer warns you](#if-your-computer-warns-you).*
 >
 > **Mac:** a drag-and-drop download is on its way. Until then, see [Install](#install).
 
@@ -197,7 +198,7 @@ your desktop.
 and double-click it. It installs the bridge into Live, puts a **Gemini Studio** icon on
 your desktop, and brings its own Python. No admin rights; everything lands under your
 own user profile. (Windows may say it "protected your PC" — click **More info → Run
-anyway**; the installer is not yet code-signed.)
+anyway**; see [If your computer warns you](#if-your-computer-warns-you).)
 
 **Windows — one line in PowerShell**, if you prefer to use your own Python. It downloads
 the bridge, installs it into Live, and puts the same icon on your desktop:
@@ -255,6 +256,37 @@ with Bridge() as live:
     live.set("live_set", "tempo", 110.0)       # change it
     live.call("live_set", "start_playing")     # press play
 ```
+
+## If your computer warns you
+
+The downloads are not code-signed yet, so Windows and macOS are suspicious the
+first time you open them. That is all it is. Here is exactly what to click —
+after this once, everything opens like any other program.
+
+**Windows**
+
+1. Some browsers hesitate over the download itself. If Edge or Chrome says the
+   file "isn't commonly downloaded" or "was blocked", click the small **…** (or
+   **^**) next to the message, then **Keep**, then **Keep anyway**.
+2. Double-click **AI-Bridge-Setup.exe**.
+3. A blue window may appear: *"Windows protected your PC."* Click the small
+   **More info** text in it.
+4. A **Run anyway** button appears. Click it — the installer starts.
+
+**Mac**
+
+1. Open the downloaded **.dmg** and drag **Gemini Studio** into the
+   **Applications** folder, like any Mac app.
+2. Double-click Gemini Studio. The Mac will refuse: *"Apple could not verify…"*
+   Click **Done** — **not** "Move to Trash".
+3. Open **System Settings → Privacy & Security** and scroll all the way down.
+   There is a line saying *"Gemini Studio" was blocked*. Click **Open Anyway**
+   next to it.
+4. Confirm with your password or fingerprint. That was the one and only time —
+   from now on it opens normally.
+
+*(On macOS 14 and older there is a shortcut instead: right-click the app,
+choose **Open**, then **Open** again.)*
 
 ---
 
