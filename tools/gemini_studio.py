@@ -384,6 +384,76 @@ class StudioWindow:
         from gemini_ui import SoundSearchDialog                       # noqa: PLC0415
         SoundSearchDialog(self.root, self.body)
 
+    @staticmethod
+    def _install_route() -> str:
+        """How this copy got here decides how it can update itself.
+
+        'setup'     — the Windows setup program: python.exe lives inside the install,
+                      so the app cannot overwrite itself; it downloads the new
+                      installer, starts it and exits (the standard hand-over).
+        'one-liner' — install.ps1: plain .py files under LOCALAPPDATA, nothing locked;
+                      re-running the one-liner replaces them.
+        'checkout'  — a developer clone: updates are called `git pull`, and an app
+                      that rewrites a working copy would be a menace.
+        """
+        exe = Path(sys.executable).resolve()
+        if (exe.parent.parent / "unins000.exe").exists():
+            return "setup"
+        if ".app/Contents/Resources" in exe.as_posix():
+            return "mac-app"
+        app = Path(__file__).resolve().parent.parent
+        if app.parent.name == "AI Bridge" and not (app / ".git").exists():
+            return "one-liner"
+        return "checkout"
+
+    def _update_bridge(self, tag: str) -> None:
+        """Fetch the new version the way THIS copy was installed, then get out of
+        the way. Asks first — closing someone's window is not a notification."""
+        route = self._install_route()
+        if route == "checkout":
+            self._say("dim", f"\nThis is a development checkout — update it with "
+                             f"git pull (release {tag}).\n")
+            return
+        if route == "mac-app":
+            # The dmg route: the browser fetches it, the user drags it over the old
+            # app — the one update step macOS actually wants apps to use unsigned.
+            import webbrowser                                         # noqa: PLC0415
+            webbrowser.open("https://github.com/AxidentDK/ai-bridge-for-ableton-live/"
+                            "releases/latest/download/AI-Bridge-Mac.dmg")
+            self._say("dim", f"\nThe {tag} dmg is downloading in your browser. Quit "
+                             "Studio, open it, and drag Gemini Studio into "
+                             "Applications — replacing the old one IS the update.\n")
+            return
+        if not messagebox.askyesno(
+                "Update AI Bridge",
+                f"Download {tag} and update now?\n\nStudio will close while the "
+                "installer runs. Nothing in Ableton Live is touched.",
+                parent=self.root):
+            return
+
+        url = ("https://github.com/AxidentDK/ai-bridge-for-ableton-live/"
+               "releases/latest/download/AI-Bridge-Setup.exe")
+        if route == "setup":
+            self._say("dim", "\nDownloading the installer…\n")
+
+            def work():
+                import tempfile, urllib.request                       # noqa: PLC0415
+                try:
+                    dest = Path(tempfile.gettempdir()) / "AI-Bridge-Setup.exe"
+                    with urllib.request.urlopen(url) as r, open(dest, "wb") as f:
+                        f.write(r.read())
+                    self.events.put(("handover", {"cmd": [str(dest)]}))
+                except Exception as exc:                              # noqa: BLE001
+                    self.events.put(("updates", {"found": [], "quiet": False,
+                                                 "problems": [f"download failed: {exc}"]}))
+            threading.Thread(target=work, daemon=True).start()
+        else:   # one-liner: the installer already knows how to replace this install
+            ps = ("irm https://raw.githubusercontent.com/AxidentDK/"
+                  "ai-bridge-for-ableton-live/main/install.ps1 | iex")
+            self.events.put(("handover", {"cmd": ["powershell", "-NoProfile",
+                                                  "-ExecutionPolicy", "Bypass",
+                                                  "-Command", ps]}))
+
     def _check_updates(self, quiet: bool = False) -> None:
         """Ask GitHub whether a newer bridge or listener exists, off the UI thread.
 
@@ -404,13 +474,14 @@ class StudioWindow:
                 with urllib.request.urlopen(req, timeout=10) as r:
                     return json.load(r).get("tag_name") or ""
 
+            bridge_tag = None
             try:
                 tag = latest("ai-bridge-for-ableton-live")
                 if tag and tag.lstrip("v") != mcp_server.SERVER_VERSION:
+                    bridge_tag = tag
                     found.append(
-                        f"AI Bridge {tag} is out (this is {mcp_server.SERVER_VERSION}). "
-                        "Download: github.com/AxidentDK/ai-bridge-for-ableton-live/"
-                        "releases/latest")
+                        f"AI Bridge {tag} is out (this is {mcp_server.SERVER_VERSION}) "
+                        "— Settings → Check for updates installs it.")
             except Exception as exc:                                  # noqa: BLE001
                 problems.append(f"could not reach GitHub: {exc}")
             try:
@@ -423,7 +494,7 @@ class StudioWindow:
             except Exception as exc:                                  # noqa: BLE001
                 problems.append(f"could not check the listener: {exc}")
             self.events.put(("updates", {"found": found, "problems": problems,
-                                         "quiet": quiet}))
+                                         "quiet": quiet, "bridge_tag": bridge_tag}))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -549,11 +620,18 @@ class StudioWindow:
                 elif kind == "updates":
                     for line in fields["found"]:
                         self._say("dim", f"\n⬆ {line}\n")
+                    tag = fields.get("bridge_tag")
+                    if tag and not fields["quiet"]:
+                        self._update_bridge(tag)
                     if not fields["quiet"]:
                         if not fields["found"] and not fields["problems"]:
                             self._say("dim", "\nEverything is up to date.\n")
                         for line in fields["problems"]:
                             self._say("dim", f"\n{line}\n")
+                elif kind == "handover":
+                    import subprocess                                 # noqa: PLC0415
+                    subprocess.Popen(fields["cmd"])                   # noqa: S603
+                    self.on_close()
                 elif kind == "interject":
                     self._say("dim", "     → your comment went to Gemini with this step\n")
                     self.log.append("tool", "     → comment delivered")
