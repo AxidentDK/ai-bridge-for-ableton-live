@@ -24,7 +24,7 @@ SERVER_NAME = "ai-bridge-for-ableton-live"
 #: 0.3.0 and 0.4.0 — two numbers for one program, which tells a user nothing and cannot
 #: answer "are these two ends compatible?". They are released together; they are versioned
 #: together.
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
 PROTOCOL_VERSION = "2024-11-05"
 
 
