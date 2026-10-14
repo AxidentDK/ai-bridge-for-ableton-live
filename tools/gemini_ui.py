@@ -187,3 +187,205 @@ class KeyDialog(tk.Toplevel):
                             f"Saved to {path}",
                             parent=self)
         self.destroy()
+
+
+class SoundSearchDialog(tk.Toplevel):
+    """Install, update and feed the bridge's ears, in plain words.
+
+    `find_sound` works by listening, which needs the listener: a separate download
+    with models and real dependencies. This dialog is the whole journey — what it is,
+    one button to fetch it, a scan to build the index, and a check for updates once it
+    is installed. Everything heavy runs off the UI thread; workers talk back through a
+    queue, never touching a widget (the same rule the main window lives by).
+    """
+
+    def __init__(self, parent, body_font):
+        super().__init__(parent)
+        self.title("Sound search")
+        self.configure(bg=BG, padx=18, pady=16)
+        self.resizable(False, False)
+        self.transient(parent)
+        self.q: queue.Queue = queue.Queue()
+        self.proc = None
+
+        tk.Label(self, text="Find your sounds by how they sound", bg=BG, fg=FG,
+                 font=(body_font.cget("family"), 11, "bold")).pack(anchor="w")
+        tk.Label(self, bg=BG, fg=DIM, font=body_font, justify="left", wraplength=470,
+                 text=("Ask for “a crispy clap” or “a dark pad, no drums” "
+                       "and the bridge finds the file — even in sample folders that have "
+                       "no tags at all. For that it needs its ears: the listener, a "
+                       "separate download of about 100 MB (program, models and their "
+                       "libraries). It listens on your computer only; your sounds never "
+                       "leave it.")).pack(anchor="w", pady=(4, 10))
+
+        self.state_label = tk.Label(self, bg=BG, fg=DIM, font=body_font)
+        self.state_label.pack(anchor="w", pady=(0, 8))
+
+        row = tk.Frame(self, bg=BG)
+        row.pack(anchor="w", pady=(0, 8))
+        self.action = tk.Button(row, text="…", state="disabled", command=self._install,
+                                bg=PANEL, fg=FG, activebackground=PANEL, relief="flat",
+                                padx=12, pady=4, font=body_font)
+        self.action.pack(side="left")
+        self.update_btn = tk.Button(row, text="Check for update", command=self._check_update,
+                                    bg=PANEL, fg=FG, activebackground=PANEL, relief="flat",
+                                    padx=12, pady=4, font=body_font)
+
+        self.scan_frame = tk.Frame(self, bg=BG)
+        self.scan_mode = tk.StringVar(value="live")
+        tk.Radiobutton(self.scan_frame, text="The sounds Ableton already knows",
+                       value="live", variable=self.scan_mode, bg=BG, fg=FG,
+                       selectcolor=PANEL, activebackground=BG, font=body_font).pack(anchor="w")
+        tk.Radiobutton(self.scan_frame, text="A folder I choose…", value="folder",
+                       variable=self.scan_mode, bg=BG, fg=FG, selectcolor=PANEL,
+                       activebackground=BG, font=body_font).pack(anchor="w")
+        srow = tk.Frame(self.scan_frame, bg=BG)
+        srow.pack(anchor="w", pady=(4, 0))
+        self.scan_btn = tk.Button(srow, text="Scan", command=self._scan, bg=PANEL, fg=FG,
+                                  activebackground=PANEL, relief="flat", padx=12, pady=4,
+                                  font=body_font)
+        self.scan_btn.pack(side="left")
+        self.stop_btn = tk.Button(srow, text="Stop", command=self._stop, bg=PANEL, fg=DIM,
+                                  activebackground=PANEL, relief="flat", padx=12, pady=4,
+                                  font=body_font, state="disabled")
+        self.stop_btn.pack(side="left", padx=(8, 0))
+
+        self.out = tk.Text(self, height=9, width=64, bg=PANEL, fg=DIM, relief="flat",
+                           font=body_font, state="disabled")
+        self.out.pack(fill="x", pady=(8, 0))
+
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.after(100, self._drain)
+        self._refresh_state()
+
+    # ---- helpers -------------------------------------------------------------------
+
+    def _say(self, line: str) -> None:
+        self.out.configure(state="normal")
+        self.out.insert("end", line.rstrip() + "\n")
+        self.out.see("end")
+        self.out.configure(state="disabled")
+
+    def _refresh_state(self) -> None:
+        def work():
+            import sound_search_setup as sss                          # noqa: PLC0415
+            self.q.put(("state", sss.status()))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_state(self, st: dict) -> None:
+        if st["installed"]:
+            n = st.get("indexed")
+            idx = f"{n:,} sounds indexed" if n else "nothing scanned yet"
+            rel = st.get("release") or "version unknown"
+            self.state_label.configure(fg=MODEL, text=f"Installed ({rel}) — {idx}.")
+            self.action.pack_forget()
+            self.update_btn.pack(side="left")
+            self.scan_frame.pack(anchor="w")
+        else:
+            self.state_label.configure(fg=DIM, text="Not installed yet.")
+            self.action.configure(text="Download and set up (about 100 MB)",
+                                  state="normal")
+
+    # ---- actions -------------------------------------------------------------------
+
+    def _install(self, update: bool = False) -> None:
+        self.action.configure(state="disabled")
+        self.update_btn.configure(state="disabled")
+
+        def work():
+            import sound_search_setup as sss                          # noqa: PLC0415
+            try:
+                sss.install(progress=lambda m: self.q.put(("line", m)), update=update)
+                self.q.put(("installed", None))
+            except Exception as exc:                                  # noqa: BLE001
+                self.q.put(("error", f"{exc}"))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _check_update(self) -> None:
+        self.update_btn.configure(state="disabled")
+
+        def work():
+            import sound_search_setup as sss                          # noqa: PLC0415
+            try:
+                self.q.put(("update", sss.check_update()))
+            except Exception as exc:                                  # noqa: BLE001
+                self.q.put(("error", f"{exc}"))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _scan(self) -> None:
+        import sound_search_setup as sss                              # noqa: PLC0415
+        folders = None
+        if self.scan_mode.get() == "folder":
+            from tkinter import filedialog                            # noqa: PLC0415
+            picked = filedialog.askdirectory(parent=self)
+            if not picked:
+                return
+            folders = [picked]
+        cmd = sss.scan_command(folders)
+        self._say("scanning… (you can keep using Studio; Stop ends it early and "
+                  "keeps what is done)")
+        self.scan_btn.configure(state="disabled")
+        self.stop_btn.configure(state="normal", fg=FG)
+
+        def work():
+            import subprocess                                         # noqa: PLC0415
+            flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            try:
+                self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,  # noqa: S603
+                                             stderr=subprocess.STDOUT, text=True,
+                                             creationflags=flags)
+                for line in self.proc.stdout:
+                    if line.strip():
+                        self.q.put(("line", line))
+                self.proc.wait()
+                self.q.put(("scanned", self.proc.returncode))
+            except Exception as exc:                                  # noqa: BLE001
+                self.q.put(("error", f"{exc}"))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _stop(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            self._say("stopping — every sound already analysed stays in the index.")
+
+    def _close(self) -> None:
+        self._stop()
+        self.destroy()
+
+    def _drain(self) -> None:
+        try:
+            while True:
+                kind, payload = self.q.get_nowait()
+                if kind == "line":
+                    self._say(str(payload))
+                elif kind == "state":
+                    self._on_state(payload)
+                elif kind == "installed":
+                    self._say("done.")
+                    self._refresh_state()
+                elif kind == "scanned":
+                    self._say("scan finished." if payload == 0 else
+                              f"the scan ended with code {payload} — see the lines above.")
+                    self.scan_btn.configure(state="normal")
+                    self.stop_btn.configure(state="disabled", fg=DIM)
+                    self._refresh_state()
+                elif kind == "update":
+                    cur, new = payload["installed"], payload["latest"]
+                    if payload["update_available"]:
+                        self._say(f"an update exists: {cur or 'unknown'} → {new}")
+                        self.update_btn.configure(text=f"Update to {new}", state="normal",
+                                                  command=lambda: self._install(update=True))
+                    else:
+                        self._say(f"up to date ({cur}).")
+                        self.update_btn.configure(state="normal")
+                elif kind == "error":
+                    self._say(f"that did not work: {payload}")
+                    self.action.configure(state="normal")
+                    self.update_btn.configure(state="normal")
+                    self.scan_btn.configure(state="normal")
+        except queue.Empty:
+            pass
+        try:
+            self.after(100, self._drain)
+        except tk.TclError:
+            pass

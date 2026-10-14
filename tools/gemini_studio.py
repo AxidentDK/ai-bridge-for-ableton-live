@@ -167,6 +167,9 @@ class StudioWindow:
                   "here can write over your work.\n")
         self._idle()
         self._check_live()
+        # A quiet look for new versions, well after startup has the screen: it says
+        # something only when there IS something, and nothing at all when offline.
+        self.root.after(3000, lambda: self._check_updates(quiet=True))
         self.root.after(100, self._drain)
         if not self.key:
             self._say("err", "\nNo API key yet — paste one to start.\n")
@@ -197,7 +200,10 @@ class StudioWindow:
         settings.add_command(label="Gemini API key…", command=self.ask_for_key)
         settings.add_command(label="Refresh model list", command=self._load_models_async)
         settings.add_separator()
+        settings.add_command(label="Sound search…", command=self.sound_search)
+        settings.add_separator()
         settings.add_command(label="Check the connection to Live", command=self._check_live)
+        settings.add_command(label="Check for updates", command=self._check_updates)
         menubar.add_cascade(label="Settings", menu=settings)
 
         helpmenu = tk.Menu(menubar, tearoff=0)
@@ -374,6 +380,53 @@ class StudioWindow:
             self._say("dim", "\n(Gemini stopped before reading your comment — it's back "
                              "in the box, send it when you like.)\n")
 
+    def sound_search(self) -> None:
+        from gemini_ui import SoundSearchDialog                       # noqa: PLC0415
+        SoundSearchDialog(self.root, self.body)
+
+    def _check_updates(self, quiet: bool = False) -> None:
+        """Ask GitHub whether a newer bridge or listener exists, off the UI thread.
+
+        quiet=True is the startup check: one dim line when something is newer, total
+        silence otherwise — a notification, not a nag, and never a popup. The manual
+        menu item uses quiet=False, which also reports "up to date" and failures,
+        because an answer the user asked for must not be invisible.
+        """
+        def work():
+            import urllib.request                                     # noqa: PLC0415
+            import mcp_server                                         # noqa: PLC0415
+            found, problems = [], []
+
+            def latest(repo: str) -> str:
+                req = urllib.request.Request(
+                    f"https://api.github.com/repos/AxidentDK/{repo}/releases/latest",
+                    headers={"User-Agent": "ai-bridge-studio"})
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    return json.load(r).get("tag_name") or ""
+
+            try:
+                tag = latest("ai-bridge-for-ableton-live")
+                if tag and tag.lstrip("v") != mcp_server.SERVER_VERSION:
+                    found.append(
+                        f"AI Bridge {tag} is out (this is {mcp_server.SERVER_VERSION}). "
+                        "Download: github.com/AxidentDK/ai-bridge-for-ableton-live/"
+                        "releases/latest")
+            except Exception as exc:                                  # noqa: BLE001
+                problems.append(f"could not reach GitHub: {exc}")
+            try:
+                import sound_search_setup as sss                      # noqa: PLC0415
+                if sss.installed_release():
+                    upd = sss.check_update()
+                    if upd["update_available"]:
+                        found.append(f"Sound search {upd['latest']} is out — "
+                                     "Settings → Sound search → Check for update.")
+            except Exception as exc:                                  # noqa: BLE001
+                problems.append(f"could not check the listener: {exc}")
+            self.events.put(("updates", {"found": found, "problems": problems,
+                                         "quiet": quiet}))
+
+        threading.Thread(target=work, daemon=True).start()
+
     def _on_return(self, event):
         if event.state & 0x0001:                       # Shift held: a newline, not a send
             return None
@@ -493,6 +546,14 @@ class StudioWindow:
                     self._idle()
                 elif kind == "live":
                     self._on_live(fields["ok"], fields.get("detail", ""))
+                elif kind == "updates":
+                    for line in fields["found"]:
+                        self._say("dim", f"\n⬆ {line}\n")
+                    if not fields["quiet"]:
+                        if not fields["found"] and not fields["problems"]:
+                            self._say("dim", "\nEverything is up to date.\n")
+                        for line in fields["problems"]:
+                            self._say("dim", f"\n{line}\n")
                 elif kind == "interject":
                     self._say("dim", "     → your comment went to Gemini with this step\n")
                     self.log.append("tool", "     → comment delivered")
