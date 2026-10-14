@@ -17,14 +17,20 @@
 > open it and drag **Gemini Studio** into Applications. *Beta: fresh out of the
 > build, waiting for its first report from a real Mac.*
 
-> ## ✅ Version 1.0 — stable, and ready to be relied on.
+> ## ✅ Version 1.1 — stable, and ready to be relied on.
 > The bridge is feature-complete and its whole test suite is green: **215 tests**, and
 > every tool verified against a running Ableton Live 12.4.3. **64 tools** cover the Live
 > Object Model, and the four generic ones reach **563 operations across 21 object types**
 > — every one listed by name in [docs/LOM_REFERENCE.md](docs/LOM_REFERENCE.md).
 >
-> 1.0 is a promise about the interface, not a claim that nothing will ever be added:
-> the tools and the wire protocol are stable from here, and anything that breaks them
+> **New in 1.1:** the two installers above — the Windows setup program and the Mac dmg,
+> each carrying its own Python — plus parameters that answer in Live's own display
+> values (`-3.0 dB`, `1/16`), an export that renders exactly the range you asked for,
+> and `live_save_clip`. Details in the
+> [release notes](https://github.com/AxidentDK/ai-bridge-for-ableton-live/releases/tag/v1.1.0).
+>
+> 1.0 was a promise about the interface, not a claim that nothing will ever be added:
+> the tools and the wire protocol are stable, and anything that breaks them
 > gets a major version. Build against it.
 >
 > Tested on **Windows** with Live 12.4. macOS should work and has not been verified —
