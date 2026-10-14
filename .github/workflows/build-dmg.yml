@@ -1,0 +1,34 @@
+# Build the macOS download on GitHub's servers — nobody here owns a modern Mac yet.
+#
+# The product of this workflow is dist/AI-Bridge-Mac.dmg: drag-and-drop, carries its
+# own Python, built for Apple Silicon (the runner's architecture). Unsigned and not
+# notarized — the README's "If your computer warns you" section covers the first
+# open. Marked beta until it has run on a real user's Mac.
+
+name: Build macOS dmg
+
+on:
+  workflow_dispatch:            # run by hand from the Actions tab
+  push:
+    tags: ['v*']                # and for every release tag
+
+permissions:
+  contents: read
+
+jobs:
+  macos-dmg:
+    runs-on: macos-14           # Apple Silicon
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # only to query python-build-standalone releases
+        run: bash installer/build_dmg.sh
+
+      - name: Upload dmg
+        uses: actions/upload-artifact@v7
+        with:
+          name: AI-Bridge-Mac-unsigned
+          path: dist/AI-Bridge-Mac.dmg
+          if-no-files-found: error
