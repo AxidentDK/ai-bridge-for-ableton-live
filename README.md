@@ -237,6 +237,13 @@ irm https://raw.githubusercontent.com/AxidentDK/ai-bridge-for-ableton-live/main/
 3. That's it. The bridge is active whenever Live is running, and only programs on
    your own computer can reach it.
 
+**Sound search (optional, recommended).** In Gemini Studio: **Settings → Sound
+search**. One button downloads the listening module (~100 MB — models included,
+everything stays on your computer) and scans your sounds, so the AI can find files
+by how they *sound* — "a crispy clap", "a dark pad, no drums" — even in sample
+folders that have no tags at all. Once installed it can check itself for updates,
+and Studio quietly tells you when a new bridge version exists.
+
 **Then open Gemini Studio** — the desktop icon, or:
 
 ```bash
