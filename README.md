@@ -13,7 +13,9 @@
 > The installer is new and not yet code-signed, so Windows does not know it yet —
 > click-by-click help for Windows and Mac: [If your computer warns you](#if-your-computer-warns-you).*
 >
-> **Mac:** a drag-and-drop download is on its way. Until then, see [Install](#install).
+> **Mac (Apple Silicon): [Download the dmg](https://github.com/AxidentDK/ai-bridge-for-ableton-live/releases/latest/download/AI-Bridge-Mac.dmg)** —
+> open it and drag **Gemini Studio** into Applications. *Beta: fresh out of the
+> build, waiting for its first report from a real Mac.*
 
 > ## ✅ Version 1.0 — stable, and ready to be relied on.
 > The bridge is feature-complete and its whole test suite is green: **215 tests**, and
@@ -199,6 +201,13 @@ and double-click it. It installs the bridge into Live, puts a **Gemini Studio** 
 your desktop, and brings its own Python. No admin rights; everything lands under your
 own user profile. (Windows may say it "protected your PC" — click **More info → Run
 anyway**; see [If your computer warns you](#if-your-computer-warns-you).)
+
+**Mac — the easy way (Apple Silicon, beta).**
+**[Download AI-Bridge-Mac.dmg](https://github.com/AxidentDK/ai-bridge-for-ableton-live/releases/latest/download/AI-Bridge-Mac.dmg)**,
+open it, and drag **Gemini Studio** into **Applications**. The app carries its own
+Python, and every time it starts it quietly keeps the bridge inside Live up to date.
+First open needs one extra step because the app is not code-signed yet — see
+[If your computer warns you](#if-your-computer-warns-you).
 
 **Windows — one line in PowerShell**, if you prefer to use your own Python. It downloads
 the bridge, installs it into Live, and puts the same icon on your desktop:
