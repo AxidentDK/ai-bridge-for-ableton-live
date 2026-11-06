@@ -470,7 +470,14 @@ class StudioWindow:
         silence otherwise — a notification, not a nag, and never a popup. The manual
         menu item uses quiet=False, which also reports "up to date" and failures,
         because an answer the user asked for must not be invisible.
+
+        The quiet check re-arms itself every six hours: a Studio window lives for
+        days here, and a check that runs only at startup goes blind the moment a
+        release lands after it (field-hit 2026-11-06 — the 1.2.0 notice never showed
+        in a window opened before the release existed).
         """
+        if quiet and self.root.winfo_exists():
+            self.root.after(6 * 3600 * 1000, lambda: self._check_updates(quiet=True))
         def work():
             import urllib.request                                     # noqa: PLC0415
             import mcp_server                                         # noqa: PLC0415
@@ -629,6 +636,11 @@ class StudioWindow:
                 elif kind == "updates":
                     for line in fields["found"]:
                         self._say("dim", f"\n⬆ {line}\n")
+                    # A failed QUIET check says nothing on screen, by design — but
+                    # nothing anywhere makes "the line never showed" undiagnosable,
+                    # so the log always hears about it.
+                    for line in fields["problems"]:
+                        self.log.append("error", f"update check: {line}")
                     tag = fields.get("bridge_tag")
                     if tag and not fields["quiet"]:
                         self._update_bridge(tag)
