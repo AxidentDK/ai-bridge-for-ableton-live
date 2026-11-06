@@ -27,8 +27,9 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
@@ -150,6 +151,75 @@ def _is_out_of_credit(detail: str) -> bool:
     return "RESOURCE_EXHAUSTED" in detail or "billing" in detail.lower()
 
 
+# ---- usage bookkeeping ----------------------------------------------------------------
+# Google answers "how much have I used?" with nothing: there is no API for remaining
+# quota. The only counter that can exist is one we keep ourselves, from the
+# usageMetadata block every response carries. It lives next to the API key, far from
+# the program folder, and survives updates for the same reason the key does.
+
+_USAGE_LOCK = threading.Lock()
+
+
+def _usage_path() -> Path:
+    override = os.environ.get("AI_BRIDGE_HOME")
+    root = Path(override) if override else Path.home() / ".ai-bridge"
+    return root / "gemini_usage.json"
+
+
+def _quota_day() -> str:
+    """Google's daily quotas reset at midnight US-Pacific, not at the user's midnight.
+
+    Counted with a fixed UTC-8 so the tally rolls over when Google's does (around
+    09:00 Swedish time). During US summer time that rollover is one hour off — a
+    bearable error for a counter whose job is "roughly where am I today".
+    """
+    return (datetime.now(timezone.utc) - timedelta(hours=8)).strftime("%Y-%m-%d")
+
+
+def _record_usage(model: str, payload: dict) -> None:
+    """Add one answered request to today's tally. Never raises: a counter that can
+    break the call it is counting would cost more than it tells. Rejected and failed
+    requests are not counted, so the tally can run a little low — never high."""
+    meta = payload.get("usageMetadata") or {}
+    try:
+        with _USAGE_LOCK:
+            path = _usage_path()
+            try:
+                days = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                days = {}
+            day = days.setdefault(_quota_day(), {})
+            m = day.setdefault(model, {"requests": 0, "prompt": 0, "answer": 0})
+            m["requests"] += 1
+            m["prompt"] += meta.get("promptTokenCount") or 0
+            m["answer"] += meta.get("candidatesTokenCount") or 0
+            for old in sorted(days)[:-35]:                 # keep ~a month of history
+                del days[old]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(days, indent=1), encoding="utf-8")
+            tmp.replace(path)
+    except Exception:                                      # noqa: BLE001, S110
+        pass
+
+
+def usage_today(model: str | None = None) -> dict:
+    """Today's tally — for one model (its own daily quota) or all models summed."""
+    try:
+        days = json.loads(_usage_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        days = {}
+    day = days.get(_quota_day(), {})
+    picked = [day[model]] if model and model in day else (
+        [] if model else list(day.values()))
+    out = {"requests": 0, "prompt": 0, "answer": 0}
+    for m in picked:
+        for k in out:
+            out[k] += m.get(k, 0)
+    out["total"] = out["prompt"] + out["answer"]
+    return out
+
+
 def post(body: dict, key: str, *, model: str = DEFAULT_MODEL, timeout: int = 300,
          attempts: int = 5, on_retry=None) -> dict:
     """One POST to ``generateContent``, with the retry policy, returning the raw payload.
@@ -211,6 +281,7 @@ def post(body: dict, key: str, *, model: str = DEFAULT_MODEL, timeout: int = 300
                                      f"{exc}") from None
     if payload is None:
         raise GeminiError("no response")
+    _record_usage(model, payload)
     return payload
 
 

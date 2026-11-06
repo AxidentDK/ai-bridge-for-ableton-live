@@ -341,7 +341,16 @@ class StudioWindow:
                     and any("text" in p for p in h.get("parts") or []))
         remembered = ("nothing remembered yet" if not turns else
                       f"{turns} exchange{'' if turns == 1 else 's'} remembered")
-        self.status.configure(text=f"{pretty_model(self.model)} · {remembered}", fg=DIM)
+        # The day's spend, counted by us because Google will not say: requests matter
+        # on the free tier (daily caps are per model), tokens on the paid one.
+        u = gemini_client.usage_today(self.model)
+        used = ""
+        if u["requests"]:
+            tok = (f"{u['total'] / 1_000_000:.1f}M" if u["total"] >= 1_000_000 else
+                   f"{u['total'] // 1000}k" if u["total"] >= 1000 else str(u["total"]))
+            used = f" · today {u['requests']} request{'' if u['requests'] == 1 else 's'}, {tok} tokens"
+        self.status.configure(text=f"{pretty_model(self.model)} · {remembered}{used}",
+                              fg=DIM)
 
     def _set_busy(self, busy: bool, message: str = "") -> None:
         self.busy = busy

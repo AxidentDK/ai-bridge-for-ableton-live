@@ -285,6 +285,63 @@ def test_a_saved_key_lands_outside_the_repo_and_is_readable_by_the_resolver():
         assert backend._read_key_file(target) == "AIzaTESTKEY0123456789abcdef"
 
 
+def test_usage_counts_per_model_and_day():
+    import os
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["AI_BRIDGE_HOME"] = td
+        try:
+            G._record_usage("m-a", {"usageMetadata": {
+                "promptTokenCount": 100, "candidatesTokenCount": 40}})
+            G._record_usage("m-a", {"usageMetadata": {
+                "promptTokenCount": 10, "candidatesTokenCount": 5}})
+            G._record_usage("m-b", {"usageMetadata": {
+                "promptTokenCount": 1, "candidatesTokenCount": 1}})
+            a = G.usage_today("m-a")
+            assert a == {"requests": 2, "prompt": 110, "answer": 45, "total": 155}
+            both = G.usage_today()
+            assert both["requests"] == 3 and both["total"] == 157
+            assert G.usage_today("m-none")["requests"] == 0
+        finally:
+            del os.environ["AI_BRIDGE_HOME"]
+
+
+def test_usage_survives_a_broken_file_and_missing_metadata():
+    import os
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["AI_BRIDGE_HOME"] = td
+        try:
+            Path(td, "gemini_usage.json").write_text("{not json", encoding="utf-8")
+            G._record_usage("m", {})           # no usageMetadata at all
+            u = G.usage_today("m")
+            assert u["requests"] == 1 and u["total"] == 0  # counted, zero tokens
+        finally:
+            del os.environ["AI_BRIDGE_HOME"]
+
+
+def test_usage_prunes_old_days():
+    import os
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["AI_BRIDGE_HOME"] = td
+        try:
+            old = {f"2000-01-{d:02d}": {"m": {"requests": 1, "prompt": 0, "answer": 0}}
+                   for d in range(1, 31)}
+            old.update({f"2000-02-{d:02d}": {"m": {"requests": 1, "prompt": 0, "answer": 0}}
+                        for d in range(1, 11)})
+            Path(td, "gemini_usage.json").write_text(json.dumps(old), encoding="utf-8")
+            G._record_usage("m", {"usageMetadata": {}})
+            days = json.loads(Path(td, "gemini_usage.json").read_text(encoding="utf-8"))
+            assert len(days) == 35
+            assert "2000-01-01" not in days               # the oldest went first
+            assert G._quota_day() in days     # today survived
+        finally:
+            del os.environ["AI_BRIDGE_HOME"]
+
+
 def _run() -> int:
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
