@@ -34,7 +34,7 @@
 > the tools and the wire protocol are stable, and anything that breaks them
 > gets a major version. Build against it.
 >
-> Tested on **Windows** with Live 12.4, and in daily use on a **Mac** (Apple Silicon).
+> Tested on **Windows** with Live 12.4, and used a lot on a **Mac** (Apple Silicon) by a tester.
 
 > **An AI that can actually use Ableton Live — not just talk about it.**
 
@@ -194,7 +194,7 @@ your desktop.
 
 ## What you need
 
-1. **Ableton Live 12** (tested on 12.4 on Windows; in daily use on a Mac).
+1. **Ableton Live 12** (tested on 12.4 on Windows, and used a lot on a Mac).
 2. **An AI**: the Claude desktop app, or a free Gemini API key for the Studio window.
 3. **Python 3.10+** — only for the one-line and by-hand installs below. The Windows
    installer brings its own.
