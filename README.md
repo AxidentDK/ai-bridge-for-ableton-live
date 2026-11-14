@@ -5,8 +5,9 @@
 > ## ⬇️ Download — no terminal needed
 >
 > **Windows: [Download the installer](https://github.com/AxidentDK/ai-bridge-for-ableton-live/releases/latest/download/AI-Bridge-Setup.exe)** — double-click the file and
-> everything is set up: the bridge goes into Ableton Live and a **Gemini Studio** icon
-> lands on your desktop. It brings its own Python — there is nothing else to install.
+> everything is set up: the bridge goes into Ableton Live, a **Gemini Studio** icon
+> lands on your desktop, and the **Claude desktop app** is connected if you have it. It
+> brings its own Python — there is nothing else to install.
 > Two steps remain that only you can do, and the installer shows them.
 >
 > *If Windows says it "protected your PC": click **More info**, then **Run anyway**.
@@ -16,24 +17,24 @@
 > **Mac (Apple Silicon): [Download the dmg](https://github.com/AxidentDK/ai-bridge-for-ableton-live/releases/latest/download/AI-Bridge-Mac.dmg)** —
 > open it and drag **Gemini Studio** into Applications.
 
-> ## ✅ Version 1.1 — stable, and ready to be relied on.
-> The bridge is feature-complete and its whole test suite is green: **215 tests**, and
-> every tool verified against a running Ableton Live 12.4.3. **64 tools** cover the Live
+> ## ✅ Version 1.2 — stable, and ready to be relied on.
+> The bridge is feature-complete and its whole test suite is green: **241 tests**, and
+> every tool verified against a running Ableton Live 12.4. **64 tools** cover the Live
 > Object Model, and the four generic ones reach **563 operations across 21 object types**
 > — every one listed by name in [docs/LOM_REFERENCE.md](docs/LOM_REFERENCE.md).
 >
-> **New in 1.1:** the two installers above — the Windows setup program and the Mac dmg,
-> each carrying its own Python — plus parameters that answer in Live's own display
-> values (`-3.0 dB`, `1/16`), an export that renders exactly the range you asked for,
-> and `live_save_clip`. Details in the
-> [release notes](https://github.com/AxidentDK/ai-bridge-for-ableton-live/releases/tag/v1.1.0).
+> **New in 1.2:** the installers connect the **Claude desktop app** by themselves (1.2.1 —
+> then quit Claude Desktop completely and start it again), and Gemini Studio counts your
+> Gemini requests and tokens each day (1.2.0). Since 1.1: the Windows setup program and the Mac dmg, each
+> carrying its own Python, sound search set up from inside Studio, and updates from
+> **Settings → Check for updates**. Details in the
+> [release notes](https://github.com/AxidentDK/ai-bridge-for-ableton-live/releases).
 >
 > 1.0 was a promise about the interface, not a claim that nothing will ever be added:
 > the tools and the wire protocol are stable, and anything that breaks them
 > gets a major version. Build against it.
 >
-> Tested on **Windows** with Live 12.4. macOS should work and has not been verified —
-> if you run it there, say what happened.
+> Tested on **Windows** with Live 12.4, and in daily use on a **Mac** (Apple Silicon).
 
 > **An AI that can actually use Ableton Live — not just talk about it.**
 
@@ -193,7 +194,7 @@ your desktop.
 
 ## What you need
 
-1. **Ableton Live 12** (tested on 12.4, Windows — macOS should work, untested).
+1. **Ableton Live 12** (tested on 12.4 on Windows; in daily use on a Mac).
 2. **An AI**: the Claude desktop app, or a free Gemini API key for the Studio window.
 3. **Python 3.10+** — only for the one-line and by-hand installs below. The Windows
    installer brings its own.
