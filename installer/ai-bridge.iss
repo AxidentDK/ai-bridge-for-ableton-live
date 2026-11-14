@@ -99,13 +99,18 @@ end;
 // while it runs is made again by a hidden helper (install.py --claude-desktop wait) once it
 // has quit. The helper runs on this program's Python, so it holds files here: an update ends
 // it first (install.py starts a new one when it is still needed), an uninstall too.
+// The same for the bridge servers Claude Desktop runs from this folder (measured 2026-11-14:
+// Restart Manager found them as "Python" holding our files and shut them down; with the
+// wizard showing, the user would get Windows' "close these applications" page instead).
+// Claude Desktop starts them again at its next start. Only this install's own copies.
 procedure EndClaudeHelpers;
 var
   Code: Integer;
 begin
   Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-       '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like ''*install.py*--claude-desktop wait*'' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"',
+       '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$app = ''' + ExpandConstant('{app}') + '''; Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.Contains($app) -and ($_.CommandLine -like ''*install.py*--claude-desktop wait*'' -or $_.CommandLine -like ''*mcp_server.py*'') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"',
        '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Log(Format('Claude Desktop''s bridge servers and helper from this folder ended (exit %d).', [Code]));
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
