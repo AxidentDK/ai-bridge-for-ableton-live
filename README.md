@@ -178,7 +178,7 @@ so you get a different window:
 | | **Claude** | **Gemini** |
 |---|---|---|
 | Your window | the **Claude desktop app** (or Claude Code) | **Gemini Studio**, included |
-| How it connects | one command in Claude's settings (below) | built in |
+| How it connects | the installer connects it (below) | built in |
 | What you need | a Claude subscription | a Gemini API key — free to start |
 
 **Gemini Studio** is a chat window that ships with the bridge. Paste an API key once and
@@ -204,14 +204,15 @@ your desktop.
 **Windows — the easy way.**
 **[Download AI-Bridge-Setup.exe](https://github.com/AxidentDK/ai-bridge-for-ableton-live/releases/latest/download/AI-Bridge-Setup.exe)**
 and double-click it. It installs the bridge into Live, puts a **Gemini Studio** icon on
-your desktop, and brings its own Python. No admin rights; everything lands under your
-own user profile. (Windows may say it "protected your PC" — click **More info → Run
+your desktop, connects the **Claude desktop app** if you have it (a ticked box), and
+brings its own Python. No admin rights; everything lands under your own user profile. (Windows may say it "protected your PC" — click **More info → Run
 anyway**; see [If your computer warns you](#if-your-computer-warns-you).)
 
 **Mac — the easy way (Apple Silicon, beta).**
 **[Download AI-Bridge-Mac.dmg](https://github.com/AxidentDK/ai-bridge-for-ableton-live/releases/latest/download/AI-Bridge-Mac.dmg)**,
 open it, and drag **Gemini Studio** into **Applications**. The app carries its own
-Python, and every time it starts it quietly keeps the bridge inside Live up to date.
+Python, and every time it starts it quietly keeps the bridge inside Live up to date, and
+connects the Claude desktop app if you have it.
 First open needs one extra step because the app is not code-signed yet — see
 [If your computer warns you](#if-your-computer-warns-you).
 
@@ -254,15 +255,27 @@ First run, choose **Settings → Gemini API key**. The dialog links to Google's 
 free one, checks the key before saving it, and stores it in your user profile — outside
 the program's folder, so it cannot be shared or committed by accident.
 
-**Connect Claude** — one command in Claude Code (the Claude desktop app takes the same
-thing under its settings):
+**Connect Claude.** The installers connect the **Claude desktop app** for you when it is
+on your computer. Then **quit Claude Desktop completely and start it again** — on Windows
+closing its window is not enough: right-click its icon by the clock and choose **Quit**.
+(Why: Claude Desktop keeps its settings in memory and writes them back when it quits,
+which would undo a change made while it ran — so the installer makes the change again,
+out of sight, the moment Claude Desktop has quit. Uninstalling asks you to quit it first
+for the same reason.) Installed Claude Desktop later, or installed by hand? Connect it
+with:
+
+```bash
+python install.py --claude-desktop
+```
+
+(`--claude-desktop off` takes it out again.) **Claude Code** takes one command:
 
 ```bash
 claude mcp add ai-bridge -- python /path/to/ai-bridge-for-ableton-live/host/mcp_server.py
 ```
 
 If you installed with the Windows setup program, it brought its own Python, so point
-Claude at that one (replace `<you>` with your Windows user name):
+Claude Code at that one (replace `<you>` with your Windows user name):
 
 ```powershell
 claude mcp add ai-bridge -- "C:\Users\<you>\AppData\Local\Programs\AI Bridge\python\python.exe" "C:\Users\<you>\AppData\Local\Programs\AI Bridge\app\host\mcp_server.py"
