@@ -11,6 +11,8 @@ Usage::
     python install.py --status   # show where it is / would go
     python install.py --uninstall
     python install.py --user-library "D:\\Custom\\User Library"   # override
+    python install.py --claude-desktop       # connect the Claude desktop app
+    python install.py --claude-desktop off   # disconnect it again
 
 No dependencies. Windows and macOS (Linux only if you pass --user-library).
 """
@@ -258,14 +260,179 @@ def do_status(user_library: Path, dest: Path):
           f"({md})")
 
 
+# --- Claude Desktop -------------------------------------------------------------------
+# Claude Desktop starts MCP servers listed in its own settings file. Everyone who uses
+# Claude instead of Gemini needs the bridge in that list, and hand-editing JSON is not
+# something a setup program may ask of anyone. The rule for the file: add or update our
+# one entry, keep everything else exactly as it was, and never write into a file we
+# could not read — a broken settings file stays the user's, untouched.
+
+CLAUDE_SERVER = "ai-bridge"
+CLAUDE_BACKUP = "claude_desktop_config.before-ai-bridge.json"
+CLAUDE_PACKAGE = "Claude_pzs8sxrjxfjjc"     # the Microsoft Store / MSIX build
+
+
+def _local_appdata() -> Path:
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+
+
+def claude_desktop_dir() -> Path:
+    """Windows: today's Claude keeps its data in %LOCALAPPDATA%\\Claude-Data\\<install>\\,
+    one folder per kind of install; the one in use holds Claude's own config.json, newest
+    written. Older installs use %APPDATA%\\Claude. Measured 2026-11-14: settings written
+    to the old place are not read by a Claude that has a Claude-Data folder."""
+    if platform.system() == "Darwin":
+        return Path.home() / "Library" / "Application Support" / "Claude"
+    if os.name == "nt":
+        data = _local_appdata() / "Claude-Data"
+        if data.is_dir():
+            in_use = sorted((d / "config.json" for d in data.iterdir() if (d / "config.json").is_file()),
+                            key=lambda p: p.stat().st_mtime, reverse=True)
+            if in_use:
+                return in_use[0].parent
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "Claude"
+    return Path.home() / ".config" / "Claude"
+
+
+def claude_desktop_config() -> Path:
+    return claude_desktop_dir() / "claude_desktop_config.json"
+
+
+def claude_desktop_present() -> bool:
+    """Same test as ClaudeDesktopFound in installer/ai-bridge.iss — keep them alike."""
+    if claude_desktop_dir().is_dir():
+        return True
+    if platform.system() == "Darwin":
+        return any(p.exists() for p in (Path("/Applications/Claude.app"),
+                                        Path.home() / "Applications" / "Claude.app"))
+    if os.name == "nt":
+        local = _local_appdata()
+        return any((local / name).is_dir() for name in
+                   ("Claude-Data", "AnthropicClaude", "Packages\\" + CLAUDE_PACKAGE))
+    return False
+
+
+def claude_server_entry() -> dict:
+    exe = Path(sys.executable)
+    if exe.name.lower() == "pythonw.exe":   # no console = no stdin/stdout for MCP
+        exe = exe.with_name("python.exe")
+    return {"command": str(exe), "args": [str(HERE / "host" / "mcp_server.py")]}
+
+
+def _is_ours(entry) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    args = entry.get("args") or []
+    if not args or not isinstance(args[-1], str):
+        return False
+    try:
+        return Path(args[-1]).resolve() == (HERE / "host" / "mcp_server.py").resolve()
+    except OSError:
+        return False
+
+
+def _read_claude_config(path: Path):
+    """The settings as a dict, {} when there are none yet, None when unreadable."""
+    if not path.exists():
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except OSError:
+        return None
+    if not text.strip():
+        return {}
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("mcpServers", {}), dict):
+        return None
+    return data
+
+
+def _write_claude_config(path: Path, data: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup = path.with_name(CLAUDE_BACKUP)
+    if path.exists() and not backup.exists():
+        shutil.copy2(path, backup)
+    # Rewritten in place, never swapped for another file: the file is Claude's.
+    body = (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    with open(path, "r+b" if path.exists() else "wb") as f:
+        f.write(body)
+        f.truncate()
+
+
+def _connect_marker() -> Path:
+    home = os.environ.get("AI_BRIDGE_HOME")
+    return (Path(home) if home else Path.home() / ".ai-bridge") / "claude_desktop_connected"
+
+
+def connect_claude_desktop(mode: str = "on") -> int:
+    """mode 'on': add or update our entry. 'auto' (the Mac app, every launch): connect
+    once if Claude Desktop is there; after that only keep our own entry's path current,
+    so someone who removed it is not overruled at every start."""
+    path = claude_desktop_config()
+    if mode == "auto":
+        if not claude_desktop_present():
+            return 0
+        connected_before = _connect_marker().exists()
+    data = _read_claude_config(path)
+    if data is None:
+        print(f"Claude Desktop: its settings file could not be read, so it was left as it was:\n"
+              f"  {path}", file=sys.stderr)
+        return 3
+    servers = data.setdefault("mcpServers", {})
+    want = claude_server_entry()
+    have = servers.get(CLAUDE_SERVER)
+    if mode == "auto" and connected_before:
+        bundle_copy = isinstance(have, dict) and ".app/Contents/Resources/" in str(have.get("command", ""))
+        if not bundle_copy:
+            return 0
+    if have == want:
+        print(f"Claude Desktop: already connected ({path})")
+    else:
+        servers[CLAUDE_SERVER] = want
+        _write_claude_config(path, data)
+        print(f"Claude Desktop: connected ({path})")
+        if have is not None and not _is_ours(have):
+            print(f"  replaced an earlier '{CLAUDE_SERVER}' entry: {json.dumps(have)}")
+        print("  Quit Claude Desktop completely and start it again to load the bridge.")
+    if mode == "auto":
+        marker = _connect_marker()
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    return 0
+
+
+def disconnect_claude_desktop() -> int:
+    """Remove our entry only — never one that points at another copy of the bridge."""
+    path = claude_desktop_config()
+    data = _read_claude_config(path)
+    if not data or not _is_ours(data.get("mcpServers", {}).get(CLAUDE_SERVER)):
+        return 0
+    del data["mcpServers"][CLAUDE_SERVER]
+    _write_claude_config(path, data)
+    print(f"Claude Desktop: disconnected ({path})")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="Install the AI Bridge remote script into Ableton Live.")
+    ap.add_argument("--claude-desktop", nargs="?", const="on", choices=("on", "auto", "off"),
+                    help="only connect (on, auto) or disconnect (off) the Claude desktop app")
     ap.add_argument("--uninstall", action="store_true", help="remove the installed remote script")
     ap.add_argument("--status", action="store_true", help="show install location and state")
     ap.add_argument("--user-library", metavar="PATH", help="override the Ableton User Library path")
     ap.add_argument("--no-m4l", action="store_true",
                     help="skip the Max for Live audio-tap device")
     args = ap.parse_args()
+
+    if args.claude_desktop:
+        sys.exit(disconnect_claude_desktop() if args.claude_desktop == "off"
+                 else connect_claude_desktop(args.claude_desktop))
+    if args.uninstall:
+        # Before the User Library lookup: that can fail, and the entry must go anyway.
+        disconnect_claude_desktop()
 
     user_library = resolve_user_library(args.user_library)
     dest = dest_dir(user_library)

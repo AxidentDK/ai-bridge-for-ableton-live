@@ -6,8 +6,8 @@
 # Applications, the way every Mac app arrives. The app carries its own Python
 # (a relocatable build with tkinter and pip inside), so the user installs
 # nothing else. On every launch the app first runs install.py quietly, which
-# keeps the bridge inside Live's User Library current, then opens the Studio
-# window.
+# keeps the bridge inside Live's User Library current (and Claude Desktop
+# connected, if it is installed), then opens the Studio window.
 #
 # Runs on a macOS machine (in practice: the GitHub Actions runner). Not signed,
 # not notarized — the README's "If your computer warns you" section exists for
@@ -87,6 +87,8 @@ CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
 PY="$CONTENTS/Resources/python/bin/python3"
 APPDIR="$CONTENTS/Resources/app"
 "$PY" "$APPDIR/install.py" >/dev/null 2>&1 || true
+# Connect Claude Desktop once if it is there; later launches only keep the path current.
+"$PY" "$APPDIR/install.py" --claude-desktop auto >/dev/null 2>&1 || true
 cd "$APPDIR"
 exec "$PY" "$APPDIR/tools/gemini_studio.py"
 LAUNCH

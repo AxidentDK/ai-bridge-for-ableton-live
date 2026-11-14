@@ -56,6 +56,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Put a Gemini Studio icon on the desktop"; GroupDescription: "Shortcuts:"
+; Shown only when Claude Desktop is on this computer; install.py does the merge.
+Name: "claudedesktop"; Description: "Connect the Claude desktop app, so Claude can work in Live too"; GroupDescription: "Claude:"; Check: ClaudeDesktopFound
 
 [Files]
 Source: "{#Stage}\python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -70,8 +72,8 @@ Name: "{autodesktop}\Gemini Studio (Ableton)"; Filename: "{app}\python\pythonw.e
 Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\tools\gemini_studio.py"""; WorkingDir: "{app}\app"; Description: "Open Gemini Studio now"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
-; Take the Control Surface back out of Live's User Library. Same script, same logic as
-; install — one source of truth for where the files go.
+; Take the Control Surface back out of Live's User Library, and this copy's entry out of
+; Claude Desktop's settings. Same script, same logic as install — one source of truth.
 Filename: "{app}\python\python.exe"; Parameters: """{app}\app\install.py"" --uninstall"; WorkingDir: "{app}\app"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveControlSurface"
 
 [UninstallDelete]
@@ -84,6 +86,37 @@ Type: dirifempty;     Name: "{app}"
 FinishedLabel=The bridge is installed.%n%nOne step only you can do, in Ableton Live:%n  Preferences > Link, Tempo & MIDI > Control Surface%n  pick "AI Bridge" in an empty slot, Input and Output on "None".%n  Restart Live if it was running.%n%nThen open Gemini Studio and add your API key under Settings.
 
 [Code]
+// Same test as claude_desktop_present() in install.py — keep them alike.
+function ClaudeDesktopFound: Boolean;
+begin
+  Result := DirExists(ExpandConstant('{userappdata}\Claude')) or
+            DirExists(ExpandConstant('{localappdata}\Claude-Data')) or
+            DirExists(ExpandConstant('{localappdata}\AnthropicClaude')) or
+            DirExists(ExpandConstant('{localappdata}\Packages\Claude_pzs8sxrjxfjjc'));
+end;
+
+procedure ConnectClaudeDesktop;
+var
+  ResultCode: Integer;
+begin
+  WizardForm.StatusLabel.Caption := 'Connecting the Claude desktop app...';
+  if not Exec(ExpandConstant('{app}\python\python.exe'),
+              '"' + ExpandConstant('{app}\app\install.py') + '" --claude-desktop',
+              ExpandConstant('{app}\app'), SW_HIDE, ewWaitUntilTerminated, ResultCode)
+     or (ResultCode <> 0) then
+    SuppressibleMsgBox(
+      'Claude Desktop was not connected: its settings file could not be read,' + #13#10 +
+      'so it was left as it was. Gemini Studio and Live are set up.',
+      mbInformation, MB_OK, IDOK);
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpFinished) and WizardIsTaskSelected('claudedesktop') then
+    WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
+      'Using Claude: quit Claude Desktop (tray icon > Quit) and start it again.';
+end;
+
 // Install the Control Surface into Live via the bundled install.py, and CHECK the result.
 // A [Run] entry would ignore the exit code, and the failure that matters here — Live's
 // User Library not found — would leave a "successful" install that Live cannot see.
@@ -109,5 +142,7 @@ begin
         ExpandConstant('{app}\app\install.py') + '" --user-library "<path to your User Library>"',
         mbError, MB_OK, IDOK);
     end;
+    if WizardIsTaskSelected('claudedesktop') then
+      ConnectClaudeDesktop;
   end;
 end;

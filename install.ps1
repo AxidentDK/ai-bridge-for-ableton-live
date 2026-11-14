@@ -106,6 +106,18 @@ try {
     if ((Get-Location).Path -eq $target) { Pop-Location }
 }
 
+# --- 4b. Claude Desktop --------------------------------------------------------------
+# Only when it is installed. A settings file it cannot read is left alone and said so;
+# that never fails the install, since Gemini Studio and Live are already set up.
+$claudeConnected = $false
+$hasClaude = (& $py -c "import sys; sys.path.insert(0, r'$target'); import install; print(install.claude_desktop_present())" 2>$null) -eq 'True'
+if ($hasClaude) {
+    Step "Connecting the Claude desktop app"
+    & $py (Join-Path $target 'install.py') --claude-desktop | Out-Null
+    if ($LASTEXITCODE -eq 0) { $claudeConnected = $true; Good "connected" }
+    else { Warn "its settings file could not be read, so it was left as it was" }
+}
+
 # --- 5. Desktop icon -----------------------------------------------------------------
 # pythonw.exe, not python.exe: the console flash of a windowed app looks like something
 # went wrong, and there is nothing to read in it.
@@ -142,10 +154,16 @@ Say ""
 Say "  2. Double-click 'Gemini Studio (Ableton)' on your desktop, then"
 Say "     Settings -> Gemini API key. The dialog links to a free key."
 Say ""
-Say "  Using Claude instead of Gemini? You do not need the Studio window - register"
-Say "  the bridge as an MCP server and use the Claude desktop app:"
+if ($claudeConnected) {
+    Say "  Using Claude instead? The Claude desktop app is connected. Quit it"
+    Say "  completely (tray icon -> Quit) and start it again."
+} else {
+    Say "  Using Claude instead of Gemini? Install the Claude desktop app, then run:"
+    Say ""
+    Say "     & `"$py`" `"$target\install.py`" --claude-desktop"
+}
 Say ""
-Say "     claude mcp add ai-bridge -- `"$py`" `"$target\host\mcp_server.py`""
+Say "  Claude Code:  claude mcp add ai-bridge -- `"$py`" `"$target\host\mcp_server.py`""
 Say ""
 Say "  Installed at: $target"
 Say ""
