@@ -3,7 +3,7 @@
 # The product of this workflow is dist/AI-Bridge-Mac.dmg: drag-and-drop, carries its
 # own Python, built for Apple Silicon (the runner's architecture). Unsigned and not
 # notarized — the README's "If your computer warns you" section covers the first
-# open. Marked beta until it has run on a real user's Mac.
+# open. Out of beta since 2026-11-14: a tester has used it on a real Mac a lot.
 
 name: Build macOS dmg
 
