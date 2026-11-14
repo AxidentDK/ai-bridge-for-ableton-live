@@ -370,9 +370,10 @@ deals in `MidiNoteSpecification` objects that JSON arguments can't express.
 
 ### Tests
 
-`python tests/test_*.py` — five suites, no pytest or any other dependency
+`python tests/test_*.py` — 21 suites, no pytest or any other dependency
 required, no Live required (fakes + a real loopback socket). The Live-facing
-glue is validated against a real Live 12.4 instance.
+glue is validated against a real Live 12.4 instance, and it runs on the later
+12.4 updates too (in use on 12.4.16).
 
 ### License & contributions
 
