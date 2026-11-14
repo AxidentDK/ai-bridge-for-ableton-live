@@ -19,15 +19,28 @@ import install  # noqa: E402
 
 
 class Desk:
-    """Stand-ins for the machine: whether Claude Desktop runs, the helper, RunOnce. The
-    real ones must never act from a test - Claude Desktop may well be running here."""
+    """Stand-ins for the machine: Claude Desktop's processes, our server, the helper,
+    RunOnce. The real ones must never act from a test - Claude Desktop may well be
+    running here. `script` (optional) is a list of (pids, server running) states the
+    helper sees one per look, the last one repeating: a Claude Desktop that quits and
+    starts again while the helper watches."""
     running = False
     helpers = 0
     run_once = False
+    script = None
+    server = False
+
+    @classmethod
+    def pids(cls):
+        if cls.script:
+            state = cls.script.pop(0) if len(cls.script) > 1 else cls.script[0]
+            cls.server = state[1]
+            return set(state[0])
+        return {1} if cls.running else set()
 
 
-PATCHED = ("claude_desktop_config", "claude_desktop_present", "claude_desktop_running",
-           "_start_helper", "_set_run_once")
+PATCHED = ("claude_desktop_config", "claude_desktop_present", "claude_desktop_pids",
+           "_our_server_running", "_start_helper", "_set_run_once", "SETTLE_SECONDS", "POLL_SECONDS")
 
 
 def with_config(fn):
@@ -35,10 +48,12 @@ def with_config(fn):
         with tempfile.TemporaryDirectory() as td:
             cfg = Path(td) / "Claude" / "claude_desktop_config.json"
             saved = {name: getattr(install, name) for name in PATCHED}
-            Desk.running, Desk.helpers, Desk.run_once = False, 0, False
+            Desk.running, Desk.helpers, Desk.run_once, Desk.script, Desk.server = False, 0, False, None, False
             install.claude_desktop_config = lambda: cfg
             install.claude_desktop_present = lambda: True
-            install.claude_desktop_running = lambda: Desk.running
+            install.claude_desktop_pids = Desk.pids
+            install._our_server_running = lambda: Desk.server
+            install.SETTLE_SECONDS, install.POLL_SECONDS = 0.05, 0.001
             install._start_helper = lambda: setattr(Desk, "helpers", Desk.helpers + 1)
             install._set_run_once = lambda on: setattr(Desk, "run_once", on)
             os.environ["AI_BRIDGE_HOME"] = str(Path(td) / "home")
@@ -74,6 +89,37 @@ def test_running_claude_desktop_gets_a_helper_and_the_entry_survives_its_save(cf
     assert after["mcpServers"]["ai-bridge"] == install.claude_server_entry()
     assert after["preferences"] == {"x": 1} and after["mcpServers"]["blender"] == OTHER["blender"]
     assert not install._wish_path().exists() and not Desk.run_once
+
+
+@with_config
+def test_quick_restart_new_claude_desktop_has_our_server(cfg):
+    # Old Claude Desktop (1) quits and a new one (2) is up before the helper looks again;
+    # the new one runs our server -> it read our entry, the helper is done.
+    Desk.running = True
+    install.connect_claude_desktop("on")
+    Desk.script = [({1}, False), ({2}, False), ({2}, True)]
+    assert install.wait_for_claude_desktop() == 0
+    assert "ai-bridge" in read(cfg)["mcpServers"]
+    assert install._connect_marker().exists() and not install._wish_path().exists()
+
+
+@with_config
+def test_quick_restart_without_our_server_waits_for_the_next_quit(cfg):
+    in_memory = {"mcpServers": dict(OTHER)}
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(json.dumps(in_memory), encoding="utf-8")
+    Desk.running = True
+    install.connect_claude_desktop("on")
+    writes = []
+    real_apply = install._apply_connect
+    install._apply_connect = lambda p: (writes.append(1), real_apply(p))[1]
+    try:
+        # 2 read the file too early (no server of ours); then 2 quits, nothing runs.
+        Desk.script = [({1}, False), ({2}, False)] + [({2}, False)] * 200 + [(set(), False)]
+        assert install.wait_for_claude_desktop() == 0
+    finally:
+        install._apply_connect = real_apply
+    assert len(writes) == 2 and "ai-bridge" in read(cfg)["mcpServers"]
 
 
 @with_config

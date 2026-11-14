@@ -386,7 +386,8 @@ def _wish_path() -> Path:
     return _ai_bridge_home() / "claude_desktop_wish"
 
 
-def _windows_claude_running() -> bool:
+def _windows_processes(exe_names: set[str]) -> list[tuple[int, str]]:
+    """(pid, full image path, lower case) of the running processes with these file names."""
     import ctypes
     from ctypes import wintypes
 
@@ -404,40 +405,62 @@ def _windows_claude_running() -> bool:
     k32.CloseHandle.argtypes = [wintypes.HANDLE]
     k32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
                                                ctypes.POINTER(wintypes.DWORD)]
+    found = []
     snap = k32.CreateToolhelp32Snapshot(2, 0)           # TH32CS_SNAPPROCESS
     if not snap or snap == wintypes.HANDLE(-1).value:
-        return False
+        return found
     try:
         e = Entry()
         e.dwSize = ctypes.sizeof(Entry)
         more = k32.Process32FirstW(snap, ctypes.byref(e))
         while more:
-            if e.szExeFile.lower() == "claude.exe":
+            if e.szExeFile.lower() in exe_names:
                 h = k32.OpenProcess(0x1000, False, e.th32ProcessID)   # QUERY_LIMITED_INFORMATION
                 if h:
                     try:
                         buf, size = ctypes.create_unicode_buffer(1024), wintypes.DWORD(1024)
-                        image = buf.value.lower() if k32.QueryFullProcessImageNameW(
-                            h, 0, buf, ctypes.byref(size)) else ""
+                        if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                            found.append((e.th32ProcessID, buf.value.lower()))
                     finally:
                         k32.CloseHandle(h)
-                    # Claude Code's own claude.exe is not Claude Desktop.
-                    if "\\windowsapps\\claude_" in image or "\\anthropicclaude\\" in image:
-                        return True
             more = k32.Process32NextW(snap, ctypes.byref(e))
     finally:
         k32.CloseHandle(snap)
-    return False
+    return found
+
+
+def _pgrep(pattern: str) -> set[int]:
+    import subprocess
+    out = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True).stdout
+    return {int(p) for p in out.split()}
+
+
+def claude_desktop_pids() -> set[int]:
+    """Claude Desktop's own processes. Claude Code's own claude.exe is not Claude Desktop."""
+    try:
+        if platform.system() == "Darwin":
+            return _pgrep("/Claude.app/Contents/MacOS/Claude")
+        if os.name == "nt":
+            return {pid for pid, image in _windows_processes({"claude.exe"})
+                    if "\\windowsapps\\claude_" in image or "\\anthropicclaude\\" in image}
+    except Exception:                                    # noqa: BLE001
+        pass
+    return set()
 
 
 def claude_desktop_running() -> bool:
+    return bool(claude_desktop_pids())
+
+
+def _our_server_running() -> bool:
+    """This copy's bridge server is running: proof that the running Claude Desktop has
+    read our entry (it starts the servers its settings list)."""
     try:
         if platform.system() == "Darwin":
-            import subprocess
-            return subprocess.run(["pgrep", "-f", "/Claude.app/Contents/MacOS/Claude"],
-                                  capture_output=True).returncode == 0
+            return bool(_pgrep(str(HERE / "host" / "mcp_server.py")))
         if os.name == "nt":
-            return _windows_claude_running()
+            ours = claude_server_entry()["command"].lower()
+            return any(image == ours for _, image in _windows_processes({"python.exe"}))
     except Exception:                                    # noqa: BLE001
         pass
     return False
@@ -564,24 +587,51 @@ def disconnect_claude_desktop(repeat: bool = True) -> int:
     return code
 
 
+SETTLE_SECONDS = 30.0
+POLL_SECONDS = 0.2
+
+
+def _read_wish() -> str:
+    try:
+        return _wish_path().read_text().strip()
+    except OSError:
+        return ""
+
+
 def wait_for_claude_desktop() -> int:
-    """The hidden helper: waits while Claude Desktop runs, then makes the latest wish."""
+    """The hidden helper. Waits until the Claude Desktop processes that may still save
+    their own copy are gone, then makes the latest wish. A quick restart leaves no moment
+    without Claude Desktop (measured 2026-11-14: the new one ran 2 s after the old one
+    began to quit), so the old processes are followed by their ids. If a new Claude
+    Desktop already runs at the write, it may have read the file before it: done once it
+    shows it has our entry (it runs our server) - otherwise wait for it to quit as well."""
     import time
     _set_run_once(True)          # a shutdown ends this helper too; the next sign-in goes on
-    while claude_desktop_running():
-        time.sleep(1)
-    try:
-        wish = _wish_path().read_text().strip()
-    except OSError:
-        wish = ""
-    path = claude_desktop_config()
-    code = 0
-    if wish == "on":
-        code = _apply_connect(path)
-        if not code:
-            _mark_connected()
-    elif wish == "off":
-        code = _apply_disconnect(path)
+    may_save = claude_desktop_pids()
+    code, wish = 0, ""
+    while True:
+        while may_save & claude_desktop_pids():
+            time.sleep(POLL_SECONDS)
+        wish = _read_wish()
+        path = claude_desktop_config()
+        code = (_apply_connect(path) if wish == "on" else
+                _apply_disconnect(path) if wish == "off" else 0)
+        newer = claude_desktop_pids()
+        if not newer or wish not in ("on", "off") or code:
+            break
+        deadline = time.monotonic() + SETTLE_SECONDS
+        while newer & claude_desktop_pids() and time.monotonic() < deadline:
+            if wish == "on" and _our_server_running():
+                break
+            time.sleep(POLL_SECONDS)
+        if not newer & claude_desktop_pids():
+            may_save = newer                 # it quit within the wait: write again
+            continue
+        if _our_server_running() == (wish == "on"):
+            break                            # the running Claude Desktop has what we want
+        may_save = newer                     # it read the file before our write
+    if wish == "on" and not code:
+        _mark_connected()
     _clear_wish()
     return code
 
