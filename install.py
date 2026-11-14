@@ -362,20 +362,136 @@ def _write_claude_config(path: Path, data: dict):
         f.truncate()
 
 
-def _connect_marker() -> Path:
+def _ai_bridge_home() -> Path:
     home = os.environ.get("AI_BRIDGE_HOME")
-    return (Path(home) if home else Path.home() / ".ai-bridge") / "claude_desktop_connected"
+    return Path(home) if home else Path.home() / ".ai-bridge"
 
 
-def connect_claude_desktop(mode: str = "on") -> int:
-    """mode 'on': add or update our entry. 'auto' (the Mac app, every launch): connect
-    once if Claude Desktop is there; after that only keep our own entry's path current,
-    so someone who removed it is not overruled at every start."""
-    path = claude_desktop_config()
-    if mode == "auto":
-        if not claude_desktop_present():
-            return 0
-        connected_before = _connect_marker().exists()
+def _connect_marker() -> Path:
+    return _ai_bridge_home() / "claude_desktop_connected"
+
+
+# Claude Desktop keeps its settings file in memory and writes its own copy back, for
+# example just before it quits (measured 2026-11-14: main.log "Config file written",
+# then "beforeQuit"; the file afterwards byte-identical to the one from before our
+# entry). So a change made while it runs is made again by a hidden helper once it has
+# quit. The wish lives in a file, so a later wish replaces an earlier one; on Windows
+# RunOnce carries the helper over a shutdown that ends Claude Desktop and the helper.
+
+RUN_ONCE_KEY = r"Software\Microsoft\Windows\CurrentVersion\RunOnce"
+RUN_ONCE_NAME = "AI Bridge - Claude Desktop"
+
+
+def _wish_path() -> Path:
+    return _ai_bridge_home() / "claude_desktop_wish"
+
+
+def _windows_claude_running() -> bool:
+    import ctypes
+    from ctypes import wintypes
+
+    class Entry(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    k32.Process32FirstW.argtypes = k32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(Entry)]
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    k32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+                                               ctypes.POINTER(wintypes.DWORD)]
+    snap = k32.CreateToolhelp32Snapshot(2, 0)           # TH32CS_SNAPPROCESS
+    if not snap or snap == wintypes.HANDLE(-1).value:
+        return False
+    try:
+        e = Entry()
+        e.dwSize = ctypes.sizeof(Entry)
+        more = k32.Process32FirstW(snap, ctypes.byref(e))
+        while more:
+            if e.szExeFile.lower() == "claude.exe":
+                h = k32.OpenProcess(0x1000, False, e.th32ProcessID)   # QUERY_LIMITED_INFORMATION
+                if h:
+                    try:
+                        buf, size = ctypes.create_unicode_buffer(1024), wintypes.DWORD(1024)
+                        image = buf.value.lower() if k32.QueryFullProcessImageNameW(
+                            h, 0, buf, ctypes.byref(size)) else ""
+                    finally:
+                        k32.CloseHandle(h)
+                    # Claude Code's own claude.exe is not Claude Desktop.
+                    if "\\windowsapps\\claude_" in image or "\\anthropicclaude\\" in image:
+                        return True
+            more = k32.Process32NextW(snap, ctypes.byref(e))
+    finally:
+        k32.CloseHandle(snap)
+    return False
+
+
+def claude_desktop_running() -> bool:
+    try:
+        if platform.system() == "Darwin":
+            import subprocess
+            return subprocess.run(["pgrep", "-f", "/Claude.app/Contents/MacOS/Claude"],
+                                  capture_output=True).returncode == 0
+        if os.name == "nt":
+            return _windows_claude_running()
+    except Exception:                                    # noqa: BLE001
+        pass
+    return False
+
+
+def _helper_command() -> list[str]:
+    exe = Path(sys.executable)
+    if os.name == "nt" and exe.with_name("pythonw.exe").exists():
+        exe = exe.with_name("pythonw.exe")               # no console window
+    return [str(exe), str(HERE / "install.py"), "--claude-desktop", "wait"]
+
+
+def _set_run_once(on: bool):
+    if os.name != "nt":
+        return
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_ONCE_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            if on:
+                cmd = " ".join(f'"{part}"' if " " in part else part for part in _helper_command())
+                winreg.SetValueEx(key, RUN_ONCE_NAME, 0, winreg.REG_SZ, cmd)
+            else:
+                winreg.DeleteValue(key, RUN_ONCE_NAME)
+    except OSError:
+        pass
+
+
+def _start_helper():
+    import subprocess
+    quiet = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                 cwd=str(HERE), close_fds=True)
+    if os.name == "nt":
+        subprocess.Popen(_helper_command(), creationflags=0x00000008 | 0x00000200, **quiet)
+    else:
+        subprocess.Popen(_helper_command(), start_new_session=True, **quiet)
+
+
+def _repeat_after_quit(wish: str):
+    _wish_path().parent.mkdir(parents=True, exist_ok=True)
+    _wish_path().write_text(wish)
+    _set_run_once(True)
+    _start_helper()
+    print("  Claude Desktop is running: the change is made again once it has quit.")
+
+
+def _clear_wish():
+    try:
+        _wish_path().unlink()
+    except FileNotFoundError:
+        pass
+    _set_run_once(False)
+
+
+def _apply_connect(path: Path) -> int:
     data = _read_claude_config(path)
     if data is None:
         print(f"Claude Desktop: its settings file could not be read, so it was left as it was:\n"
@@ -384,29 +500,19 @@ def connect_claude_desktop(mode: str = "on") -> int:
     servers = data.setdefault("mcpServers", {})
     want = claude_server_entry()
     have = servers.get(CLAUDE_SERVER)
-    if mode == "auto" and connected_before:
-        bundle_copy = isinstance(have, dict) and ".app/Contents/Resources/" in str(have.get("command", ""))
-        if not bundle_copy:
-            return 0
     if have == want:
         print(f"Claude Desktop: already connected ({path})")
-    else:
-        servers[CLAUDE_SERVER] = want
-        _write_claude_config(path, data)
-        print(f"Claude Desktop: connected ({path})")
-        if have is not None and not _is_ours(have):
-            print(f"  replaced an earlier '{CLAUDE_SERVER}' entry: {json.dumps(have)}")
-        print("  Quit Claude Desktop completely and start it again to load the bridge.")
-    if mode == "auto":
-        marker = _connect_marker()
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.touch()
+        return 0
+    servers[CLAUDE_SERVER] = want
+    _write_claude_config(path, data)
+    print(f"Claude Desktop: connected ({path})")
+    if have is not None and not _is_ours(have):
+        print(f"  replaced an earlier '{CLAUDE_SERVER}' entry: {json.dumps(have)}")
+    print("  Quit Claude Desktop completely and start it again to load the bridge.")
     return 0
 
 
-def disconnect_claude_desktop() -> int:
-    """Remove our entry only — never one that points at another copy of the bridge."""
-    path = claude_desktop_config()
+def _apply_disconnect(path: Path) -> int:
     data = _read_claude_config(path)
     if not data or not _is_ours(data.get("mcpServers", {}).get(CLAUDE_SERVER)):
         return 0
@@ -416,9 +522,73 @@ def disconnect_claude_desktop() -> int:
     return 0
 
 
+def _mark_connected():
+    _connect_marker().parent.mkdir(parents=True, exist_ok=True)
+    _connect_marker().touch()
+
+
+def connect_claude_desktop(mode: str = "on") -> int:
+    """mode 'on': add or update our entry. 'auto' (the Mac app, every launch): connect
+    once if Claude Desktop is there; after that only keep our own entry's path current,
+    so someone who removed it is not overruled at every start. Connected counts only once
+    the entry has outlived Claude Desktop's own save, so 'auto' tries again until then."""
+    path = claude_desktop_config()
+    if mode == "auto":
+        if not claude_desktop_present():
+            return 0
+        if _connect_marker().exists():
+            data = _read_claude_config(path) or {}
+            have = data.get("mcpServers", {}).get(CLAUDE_SERVER)
+            bundle_copy = isinstance(have, dict) and ".app/Contents/Resources/" in str(have.get("command", ""))
+            if not bundle_copy or have == claude_server_entry():
+                return 0
+    code = _apply_connect(path)
+    if code:
+        return code
+    if claude_desktop_running():
+        _repeat_after_quit("on")
+    else:
+        _clear_wish()
+        if mode == "auto":
+            _mark_connected()
+    return 0
+
+
+def disconnect_claude_desktop(repeat: bool = True) -> int:
+    """Remove our entry only — never one that points at another copy of the bridge."""
+    code = _apply_disconnect(claude_desktop_config())
+    if repeat and claude_desktop_running():
+        _repeat_after_quit("off")
+    else:
+        _clear_wish()
+    return code
+
+
+def wait_for_claude_desktop() -> int:
+    """The hidden helper: waits while Claude Desktop runs, then makes the latest wish."""
+    import time
+    _set_run_once(True)          # a shutdown ends this helper too; the next sign-in goes on
+    while claude_desktop_running():
+        time.sleep(1)
+    try:
+        wish = _wish_path().read_text().strip()
+    except OSError:
+        wish = ""
+    path = claude_desktop_config()
+    code = 0
+    if wish == "on":
+        code = _apply_connect(path)
+        if not code:
+            _mark_connected()
+    elif wish == "off":
+        code = _apply_disconnect(path)
+    _clear_wish()
+    return code
+
+
 def main():
     ap = argparse.ArgumentParser(description="Install the AI Bridge remote script into Ableton Live.")
-    ap.add_argument("--claude-desktop", nargs="?", const="on", choices=("on", "auto", "off"),
+    ap.add_argument("--claude-desktop", nargs="?", const="on", choices=("on", "auto", "off", "wait"),
                     help="only connect (on, auto) or disconnect (off) the Claude desktop app")
     ap.add_argument("--uninstall", action="store_true", help="remove the installed remote script")
     ap.add_argument("--status", action="store_true", help="show install location and state")
@@ -428,11 +598,13 @@ def main():
     args = ap.parse_args()
 
     if args.claude_desktop:
-        sys.exit(disconnect_claude_desktop() if args.claude_desktop == "off"
-                 else connect_claude_desktop(args.claude_desktop))
+        sys.exit({"off": disconnect_claude_desktop, "wait": wait_for_claude_desktop}.get(
+            args.claude_desktop, lambda: connect_claude_desktop(args.claude_desktop))())
     if args.uninstall:
-        # Before the User Library lookup: that can fail, and the entry must go anyway.
-        disconnect_claude_desktop()
+        # Before the User Library lookup: that can fail, and the entry must go anyway. No
+        # helper here: the program's files are about to go, and the uninstaller has asked
+        # for Claude Desktop to be closed first.
+        disconnect_claude_desktop(repeat=False)
 
     user_library = resolve_user_library(args.user_library)
     dest = dest_dir(user_library)

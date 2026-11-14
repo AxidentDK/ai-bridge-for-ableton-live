@@ -18,21 +18,96 @@ sys.path.insert(0, ROOT)
 import install  # noqa: E402
 
 
+class Desk:
+    """Stand-ins for the machine: whether Claude Desktop runs, the helper, RunOnce. The
+    real ones must never act from a test - Claude Desktop may well be running here."""
+    running = False
+    helpers = 0
+    run_once = False
+
+
+PATCHED = ("claude_desktop_config", "claude_desktop_present", "claude_desktop_running",
+           "_start_helper", "_set_run_once")
+
+
 def with_config(fn):
     def run():
         with tempfile.TemporaryDirectory() as td:
             cfg = Path(td) / "Claude" / "claude_desktop_config.json"
-            saved = (install.claude_desktop_config, install.claude_desktop_present)
+            saved = {name: getattr(install, name) for name in PATCHED}
+            Desk.running, Desk.helpers, Desk.run_once = False, 0, False
             install.claude_desktop_config = lambda: cfg
             install.claude_desktop_present = lambda: True
+            install.claude_desktop_running = lambda: Desk.running
+            install._start_helper = lambda: setattr(Desk, "helpers", Desk.helpers + 1)
+            install._set_run_once = lambda on: setattr(Desk, "run_once", on)
             os.environ["AI_BRIDGE_HOME"] = str(Path(td) / "home")
             try:
                 fn(cfg)
             finally:
-                install.claude_desktop_config, install.claude_desktop_present = saved
+                for name, value in saved.items():
+                    setattr(install, name, value)
                 del os.environ["AI_BRIDGE_HOME"]
     run.__name__ = fn.__name__
     return run
+
+
+def claude_desktop_saves(cfg, before):
+    """What Claude Desktop does when it quits: writes its own copy from memory."""
+    cfg.write_text(json.dumps(before), encoding="utf-8")
+    Desk.running = False
+
+
+@with_config
+def test_running_claude_desktop_gets_a_helper_and_the_entry_survives_its_save(cfg):
+    cfg.parent.mkdir(parents=True)
+    in_memory = {"mcpServers": dict(OTHER), "preferences": {"x": 1}}
+    cfg.write_text(json.dumps(in_memory), encoding="utf-8")
+    Desk.running = True
+    assert install.connect_claude_desktop("on") == 0
+    assert Desk.helpers == 1 and Desk.run_once
+    assert install._wish_path().read_text() == "on"
+    claude_desktop_saves(cfg, in_memory)                     # the entry is gone again here
+    assert "ai-bridge" not in read(cfg)["mcpServers"]
+    assert install.wait_for_claude_desktop() == 0            # the helper, after the quit
+    after = read(cfg)
+    assert after["mcpServers"]["ai-bridge"] == install.claude_server_entry()
+    assert after["preferences"] == {"x": 1} and after["mcpServers"]["blender"] == OTHER["blender"]
+    assert not install._wish_path().exists() and not Desk.run_once
+
+
+@with_config
+def test_a_later_wish_replaces_an_earlier_one(cfg):
+    Desk.running = True
+    install.connect_claude_desktop("on")
+    install.disconnect_claude_desktop()                      # untick before Claude Desktop quit
+    Desk.running = False
+    install.wait_for_claude_desktop()
+    assert "ai-bridge" not in read(cfg)["mcpServers"]
+
+
+@with_config
+def test_not_running_needs_no_helper(cfg):
+    install.connect_claude_desktop("on")
+    assert Desk.helpers == 0 and not Desk.run_once and not install._wish_path().exists()
+
+
+@with_config
+def test_uninstall_starts_no_helper(cfg):
+    install.connect_claude_desktop("on")
+    Desk.running = True
+    install.disconnect_claude_desktop(repeat=False)
+    assert Desk.helpers == 0 and "ai-bridge" not in read(cfg)["mcpServers"]
+
+
+@with_config
+def test_auto_counts_as_connected_only_after_the_entry_survived(cfg):
+    Desk.running = True
+    install.connect_claude_desktop("auto")
+    assert not install._connect_marker().exists()            # not yet: Claude Desktop may undo it
+    claude_desktop_saves(cfg, {"mcpServers": {}})
+    install.connect_claude_desktop("auto")                   # the next launch tries again
+    assert "ai-bridge" in read(cfg)["mcpServers"] and install._connect_marker().exists()
 
 
 def read(cfg):
@@ -111,8 +186,8 @@ def test_auto_follows_a_moved_app(cfg):
     install.connect_claude_desktop("auto")
     data = read(cfg)
     data["mcpServers"]["ai-bridge"] = {
-        "command": "/Users/x/Downloads/Gemini Studio (Ableton).app/Contents/Resources/python/bin/python3",
-        "args": ["/Users/x/Downloads/Gemini Studio (Ableton).app/Contents/Resources/app/host/mcp_server.py"]}
+        "command": "/Volumes/Downloads/Gemini Studio (Ableton).app/Contents/Resources/python/bin/python3",
+        "args": ["/Volumes/Downloads/Gemini Studio (Ableton).app/Contents/Resources/app/host/mcp_server.py"]}
     cfg.write_text(json.dumps(data), encoding="utf-8")
     install.connect_claude_desktop("auto")
     assert read(cfg)["mcpServers"]["ai-bridge"] == install.claude_server_entry()

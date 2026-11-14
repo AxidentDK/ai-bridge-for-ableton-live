@@ -95,6 +95,51 @@ begin
             DirExists(ExpandConstant('{localappdata}\Packages\Claude_pzs8sxrjxfjjc'));
 end;
 
+// Claude Desktop writes its own copy of its settings back when it quits, so a change made
+// while it runs is made again by a hidden helper (install.py --claude-desktop wait) once it
+// has quit. The helper runs on this program's Python, so it holds files here: an update ends
+// it first (install.py starts a new one when it is still needed), an uninstall too.
+procedure EndClaudeHelpers;
+var
+  Code: Integer;
+begin
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+       '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like ''*install.py*--claude-desktop wait*'' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"',
+       '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  EndClaudeHelpers;
+  Result := '';
+end;
+
+// Claude Code's own claude.exe is not Claude Desktop: only the desktop app's places count.
+function ClaudeDesktopRunning: Boolean;
+var
+  Code: Integer;
+begin
+  Result := Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+       '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "if (Get-Process claude -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ''*\WindowsApps\Claude_*'' -or $_.Path -like ''*\AnthropicClaude\*'' }) { exit 1 } else { exit 0 }"',
+       '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 1);
+end;
+
+// The uninstall takes the bridge out of Claude Desktop's settings; a running Claude Desktop
+// would put it back when it quits, pointing at a removed program. So: quit it first.
+function InitializeUninstall: Boolean;
+begin
+  Result := True;
+  if not UninstallSilent then
+    while ClaudeDesktopRunning do
+      if MsgBox('Quit Claude Desktop first (its tray icon > Quit), then click OK.' + #13#10#13#10 +
+                'Cancel stops the uninstall.', mbInformation, MB_OKCANCEL) = IDCANCEL then
+      begin
+        Result := False;
+        Exit;
+      end;
+  EndClaudeHelpers;
+end;
+
 procedure ConnectClaudeDesktop;
 var
   ResultCode: Integer;
