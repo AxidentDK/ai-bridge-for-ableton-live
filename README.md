@@ -18,8 +18,7 @@
 > open it and drag **Gemini Studio** into Applications.
 
 > ## ✅ Version 1.2 — stable, and ready to be relied on.
-> The bridge is feature-complete and its whole test suite is green: **241 tests**, and
-> every tool verified against a running Ableton Live 12.4. **64 tools** cover the Live
+> The bridge is feature-complete. **64 tools** cover the Live
 > Object Model, and the four generic ones reach **563 operations across 21 object types**
 > — every one listed by name in [docs/LOM_REFERENCE.md](docs/LOM_REFERENCE.md).
 >
